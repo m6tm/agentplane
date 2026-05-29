@@ -1,82 +1,130 @@
 # Agentplane
 
-Lightweight, extensible agent orchestration control plane. Inspired by [Paperclip](https://github.com/paperclipai/paperclip), built for contributors.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-88%20passing-green.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Philosophy
+> Lightweight, extensible agent orchestration control plane. Inspired by [Paperclip](https://github.com/paperclipai/paperclip).
 
-- **Zero-config by default** — SQLite, no Docker required, runs on a laptop.
-- **Plugin-based adapters** — Bring any agent runtime (Claude Code, Kimi, custom scripts).
+## What is Agentplane?
+
+**Agentplane** is a control plane for AI-agent teams. Think of it as a task manager that orchestrates autonomous agents — Claude Code, Kimi, Codex, Gemini, Grok, Cursor, and your own custom runtimes — toward company goals.
+
+- **Zero-config by default** — SQLite, no Docker, runs on a laptop.
+- **Plugin-based adapters** — Bring any agent runtime. If it can receive a heartbeat, it's hired.
 - **Async-first** — Handles hundreds of concurrent agent heartbeats without blocking.
 - **Contributor-friendly** — Pure Python, minimal deps, clear module boundaries.
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (fast Python package manager)
+
+### Install & Run
+
 ```bash
-# 1. Install UV (fast Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Clone
+git clone https://github.com/m6tm/agentplane.git
+cd agentplane
 
-# 2. Setup project
-uv sync
+# Install dependencies
+uv sync --extra dev
 
-# 3. Init database
+# Initialize database
 uv run agentplane init
 
-# 4. Start server
+# Start server
 uv run agentplane run
 ```
 
 Server is now at `http://127.0.0.1:3400`.
 
-## API Usage
+If port 3400 is taken, it auto-detects the next available port.
+
+### Verify
+
+```bash
+# Check health
+curl http://localhost:3400/api/health
+
+# List adapters
+uv run agentplane adapters
+
+# Run tests
+uv run pytest -v
+```
+
+## Supported Adapters
+
+Agentplane ships with **12 built-in adapters** covering all major AI coding agents:
+
+| Adapter | Type | Models |
+|---|---|---|
+| `claude_local` | Claude Code CLI | Claude Opus 4.7, Sonnet 4.6, Haiku 4.6, etc. |
+| `codex_local` | OpenAI Codex CLI | GPT-5.3 Codex, GPT-5.4 |
+| `cursor_local` | Cursor CLI | auto, composer-1.5, gpt-5.3-codex-* |
+| `cursor_cloud` | Cursor Cloud API | Cloud-hosted agents |
+| `gemini_local` | Gemini CLI | Gemini 2.5 Pro, Flash, Flash Lite |
+| `grok_local` | Grok Build CLI | grok-build |
+| `kimi_local` | Kimi Code CLI | kimi-k2.6, kimi-k2.5 |
+| `opencode_local` | OpenCode CLI | auto |
+| `pi_local` | Pi CLI | auto |
+| `acpx_local` | ACPX Protocol | Claude/Codex via Agent Client Protocol |
+| `openclaw_gateway` | WebSocket Gateway | OpenClaw gateway protocol |
+| `process` | Shell Command | Any local command |
+
+## API Quick Reference
 
 ```bash
 # Create a company
-curl -X POST http://localhost:3400/api/companies \
+COMPANY=$(curl -s -X POST http://localhost:3400/api/companies \
   -H "Content-Type: application/json" \
-  -d '{"name": "Acme Corp"}'
+  -d '{"name": "Acme Corp"}' | jq -r '.id')
 
-# Create an agent (using the built-in process adapter)
-curl -X POST "http://localhost:3400/api/companies/{company_id}/agents" \
+# Create an agent
+curl -s -X POST "http://localhost:3400/api/companies/${COMPANY}/agents" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "hello-agent",
     "adapter_type": "process",
-    "adapter_config": {
-      "command": "echo",
-      "args": ["Hello from agent!"]
-    }
+    "adapter_config": {"command": "echo", "args": ["Hello!"]}
   }'
 
 # Create and execute a run
-curl -X POST "http://localhost:3400/api/agents/{agent_id}/runs" \
+RUN=$(curl -s -X POST "http://localhost:3400/api/agents/${AGENT_ID}/runs" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Say hello"}'
+  -d '{"prompt": "Say hello"}' | jq -r '.id')
 
-curl -X POST "http://localhost:3400/api/runs/{run_id}/execute"
+curl -s -X POST "http://localhost:3400/api/runs/${RUN}/execute"
 ```
+
+See [docs/API.md](docs/API.md) for the full reference.
 
 ## Architecture
 
 ```
 agentplane/
 ├── src/agentplane/
-│   ├── core/           # Config, DB (SQLModel), shared models
-│   ├── adapters/       # Plugin system for agent runtimes
-│   │   ├── base.py     # Abstract Adapter interface
-│   │   ├── registry.py # Auto-discovery of built-in + external adapters
-│   │   └── builtin/
-│   │       └── process.py   # Local shell command adapter
-│   ├── api/            # FastAPI routes
-│   ├── services/       # Business logic ( AgentService, RunService)
-│   └── cli/            # Typer CLI
-├── adapters/           # Drop external adapter plugins here
-├── tests/
-└── data/               # Local SQLite + runtime files
+│   ├── core/              # Config, DB (SQLModel), shared models
+│   ├── adapters/          # Plugin system for agent runtimes
+│   │   ├── base.py        # Abstract Adapter interface
+│   │   ├── registry.py    # Auto-discovery of built-in + external adapters
+│   │   └── builtin/       # 12 built-in adapters
+│   ├── api/               # FastAPI REST server
+│   ├── services/          # Business logic
+│   └── cli/               # Typer CLI
+├── adapters/              # Drop external adapter plugins here
+├── tests/                 # 88 integration tests
+└── data/                  # SQLite + runtime files
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## Writing a Custom Adapter
 
-Create `adapters/my_adapter.py` (or drop it in `src/agentplane/adapters/builtin/`):
+Create `adapters/my_adapter.py`:
 
 ```python
 from agentplane.adapters.base import Adapter, AdapterContext, AdapterResult
@@ -93,7 +141,6 @@ class MyAdapter(Adapter):
         return "My Custom Adapter"
 
     async def execute(self, ctx: AdapterContext, on_log=None) -> AdapterResult:
-        # Your execution logic here
         return AdapterResult(success=True, stdout="Done!")
 
     async def probe(self, config: dict) -> dict:
@@ -102,15 +149,17 @@ class MyAdapter(Adapter):
 
 Restart the server — your adapter appears automatically.
 
+See [docs/ADAPTER_GUIDE.md](docs/ADAPTER_GUIDE.md) for the complete guide.
+
 ## Scaling Up
 
 | Scale | Change |
 |---|---|
-| **Local dev** | SQLite (default) |
+| **Local dev** | SQLite (default), zero config |
 | **Team** | Swap `database_url` to PostgreSQL |
-| **Production** | Run behind Uvicorn workers / Gunicorn |
+| **Production** | Run behind Uvicorn workers / reverse proxy |
 | **Many agents** | Deploy multiple instances, shared DB |
-| **Custom runtimes** | Add adapters for Claude, Kimi, LangChain, etc. |
+| **Custom runtimes** | Add adapters for any CLI or API |
 
 Environment variables:
 
@@ -118,7 +167,17 @@ Environment variables:
 AGENTPLANE_DATABASE_URL="postgresql+asyncpg://user:pass@localhost/agentplane"
 AGENTPLANE_HOST=0.0.0.0
 AGENTPLANE_PORT=3400
+AGENTPLANE_DEBUG=false
 ```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
+- [API Reference](docs/API.md) — Complete REST API documentation
+- [CLI Reference](docs/CLI.md) — Command-line usage
+- [Adapter Guide](docs/ADAPTER_GUIDE.md) — How to write custom adapters
+- [Deployment](docs/DEPLOYMENT.md) — Production deployment modes
+- [Contributing](docs/CONTRIBUTING.md) — How to contribute
 
 ## Development
 

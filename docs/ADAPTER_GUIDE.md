@@ -6,14 +6,14 @@ An adapter bridges Agentplane to an external agent runtime. Examples:
 - **process**: Runs a shell command
 - **claude_local**: Runs `claude` CLI
 - **kimi_local**: Runs `kimi` CLI
-- **langchain**: Runs a LangChain agent
-- **http**: Calls a remote agent service
+- **cursor_cloud**: Calls a remote agent service
+- **openclaw_gateway**: Connects via WebSocket
 
 ## The Adapter Interface
 
-```python
-from agentplane.adapters.base import Adapter, AdapterContext, AdapterResult
+Every adapter must inherit from `Adapter` and implement:
 
+```python
 class MyAdapter(Adapter):
     @property
     def type(self) -> str: ...
@@ -55,6 +55,50 @@ class MyAdapter(Adapter):
 | `cost_usd` | Estimated cost |
 | `model` | Model used |
 
+## Local CLI Adapters
+
+For adapters that shell out to a local CLI, inherit from `LocalCliAdapter`:
+
+```python
+from agentplane.adapters.builtin._cli_base import LocalCliAdapter
+from agentplane.adapters.registry import register_adapter
+
+@register_adapter
+class MyCliAdapter(LocalCliAdapter):
+    @property
+    def type(self) -> str:
+        return "my_cli"
+
+    @property
+    def label(self) -> str:
+        return "My CLI"
+
+    @property
+    def cli_command(self) -> str:
+        return "my-cli"
+
+    @property
+    def default_model(self) -> str:
+        return "default-model"
+
+    async def execute(self, ctx, on_log=None):
+        # LocalCliAdapter handles the subprocess
+        # Just build args and call super logic if needed
+        config = ctx.config or {}
+        args = ["--print", ctx.prompt]
+        if ctx.session_id:
+            args.extend(["--resume", ctx.session_id])
+        # ... or use the built-in _run_cli helper
+        return await self._run_cli(
+            self.cli_command,
+            args,
+            self._build_cwd(ctx),
+            self._build_env(ctx),
+            self._build_timeout(ctx),
+            on_log,
+        )
+```
+
 ## Registration
 
 Use the decorator:
@@ -69,7 +113,6 @@ class MyAdapter(Adapter): ...
 Or register at runtime:
 
 ```python
-from agentplane.adapters.registry import register_adapter
 register_adapter(MyAdapter)
 ```
 
@@ -87,3 +130,47 @@ class CustomAdapter(Adapter): ...
 ```
 
 Then call `discover_external_adapters("./adapters")` at startup.
+
+## Testing Your Adapter
+
+```python
+import pytest
+from agentplane.adapters.registry import get_adapter
+from agentplane.adapters.base import AdapterContext
+
+@pytest.mark.asyncio
+async def test_my_adapter():
+    adapter = get_adapter("my_adapter")
+    ctx = AdapterContext(
+        run_id="test-1",
+        agent_id="agent-1",
+        company_id="company-1",
+        config={"key": "value"},
+    )
+    result = await adapter.execute(ctx)
+    assert result.success is True
+```
+
+## Session Resume
+
+For adapters that support session resume:
+
+1. Return `session_id` in `AdapterResult`
+2. Check `ctx.session_id` on execute
+3. Pass session ID to the underlying CLI/API
+
+Example (Claude):
+```python
+if ctx.session_id:
+    args.extend(["--resume", ctx.session_id])
+# ... after execution
+result.session_id = parsed_session_id or ctx.session_id
+```
+
+## Best Practices
+
+- **Graceful degradation**: If CLI is not installed, `probe()` should return `available: false` with a helpful hint
+- **Timeout handling**: Always respect the timeout; kill the subprocess if exceeded
+- **Output streaming**: Use `on_log` callback to stream stdout/stderr in real-time
+- **Security**: Never log API keys or sensitive env vars
+- **Models list**: Provide `models` property for UI display
