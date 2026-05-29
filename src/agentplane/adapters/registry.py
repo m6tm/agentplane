@@ -42,6 +42,8 @@ def _discover_builtin_adapters() -> None:
     from agentplane.adapters import builtin
 
     for _, modname, _ in pkgutil.iter_modules(builtin.__path__):
+        if modname.startswith("_"):
+            continue
         try:
             mod = importlib.import_module(f"agentplane.adapters.builtin.{modname}")
             for _, obj in inspect.getmembers(mod):

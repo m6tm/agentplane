@@ -33,5 +33,7 @@ app.add_middleware(
 
 app.include_router(health.router, tags=["Health"])
 app.include_router(companies.router, prefix="/api/companies", tags=["Companies"])
-app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
-app.include_router(runs.router, prefix="/api/runs", tags=["Runs"])
+app.include_router(agents.company_router, prefix="/api/companies/{company_id}/agents", tags=["Agents"])
+app.include_router(agents.agent_router, prefix="/api/agents", tags=["Agents"])
+app.include_router(runs.agent_router, prefix="/api/agents/{agent_id}", tags=["Runs"])
+app.include_router(runs.run_router, prefix="/api/runs", tags=["Runs"])
