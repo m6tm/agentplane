@@ -69,7 +69,6 @@ class RunService:
             ctx = AdapterContext(
                 run_id=run.id,
                 agent_id=agent.id,
-                company_id=agent.company_id,
                 task_id=run.task_id,
                 prompt=run.prompt or "",
                 config=agent.adapter_config,

@@ -10,7 +10,7 @@ Agentplane is structured as a layered control plane:
 │  agentplane run | init | doctor         │
 ├─────────────────────────────────────────┤
 │  API (FastAPI)                          │
-│  /api/companies | /agents | /runs       │
+│  /api/agents | /runs                    │
 ├─────────────────────────────────────────┤
 │  Services                               │
 │  AgentService | RunService              │
@@ -24,10 +24,6 @@ Agentplane is structured as a layered control plane:
 ```
 
 ## Core Concepts
-
-### Company
-
-A company is the top-level organizational boundary. All agents, tasks, and runs are scoped to a company. This enables multi-tenant deployments.
 
 ### Agent
 
@@ -52,14 +48,13 @@ A task is a unit of work that can be assigned to an agent. Tasks have a lifecycl
 ## Data Flow
 
 ```
-1. User creates Company
-2. User creates Agent (specifies adapter_type + adapter_config)
-3. User creates Run (linked to Agent, optional Task)
-4. API calls RunService.execute()
-5. Service loads adapter via registry
-6. Adapter.execute(ctx) shells out to CLI or calls API
-7. Results are persisted back to Run
-8. Agent session is updated for resume
+1. User creates Agent (specifies adapter_type + adapter_config)
+2. User creates Run (linked to Agent, optional Task)
+3. API calls RunService.execute()
+4. Service loads adapter via registry
+5. Adapter.execute(ctx) shells out to CLI or calls API
+6. Results are persisted back to Run
+7. Agent session is updated for resume
 ```
 
 ## Database
@@ -80,7 +75,6 @@ AGENTPLANE_DATABASE_URL="postgresql+asyncpg://user:pass@host/db"
 
 | Table | Purpose |
 |---|---|
-| `companies` | Organizations |
 | `agents` | Agent definitions + config |
 | `tasks` | Work items |
 | `runs` | Execution records |

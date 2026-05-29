@@ -4,11 +4,11 @@
 [![Tests](https://img.shields.io/badge/tests-88%20passing-green.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Lightweight, extensible agent orchestration control plane. Inspired by [Paperclip](https://github.com/paperclipai/paperclip).
+> Lightweight, extensible agent orchestration control plane.
 
 ## What is Agentplane?
 
-**Agentplane** is a control plane for AI-agent teams. Think of it as a task manager that orchestrates autonomous agents — Claude Code, Kimi, Codex, Gemini, Grok, Cursor, and your own custom runtimes — toward company goals.
+**Agentplane** is a control plane for AI-agent teams. It orchestrates autonomous agents — Claude Code, Kimi, Codex, Gemini, Grok, Cursor, and your own custom runtimes — toward your goals.
 
 - **Zero-config by default** — SQLite, no Docker, runs on a laptop.
 - **Plugin-based adapters** — Bring any agent runtime. If it can receive a heartbeat, it's hired.
@@ -78,22 +78,17 @@ Agentplane ships with **12 built-in adapters** covering all major AI coding agen
 ## API Quick Reference
 
 ```bash
-# Create a company
-COMPANY=$(curl -s -X POST http://localhost:3400/api/companies \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Acme Corp"}' | jq -r '.id')
-
 # Create an agent
-curl -s -X POST "http://localhost:3400/api/companies/${COMPANY}/agents" \
+AGENT=$(curl -s -X POST http://localhost:3400/api/agents \
   -H "Content-Type: application/json" \
   -d '{
     "name": "hello-agent",
     "adapter_type": "process",
     "adapter_config": {"command": "echo", "args": ["Hello!"]}
-  }'
+  }' | jq -r '.id')
 
 # Create and execute a run
-RUN=$(curl -s -X POST "http://localhost:3400/api/agents/${AGENT_ID}/runs" \
+RUN=$(curl -s -X POST "http://localhost:3400/api/agents/${AGENT}/runs" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Say hello"}' | jq -r '.id')
 

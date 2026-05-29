@@ -9,22 +9,6 @@ from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import Column, JSON
 
 
-class Company(SQLModel, table=True):
-    """A company / organization that owns agents and goals."""
-
-    __tablename__ = "companies"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    name: str = Field(index=True)
-    description: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-    # Relationships
-    agents: list["Agent"] = Relationship(back_populates="company")
-    tasks: list["Task"] = Relationship(back_populates="company")
-
-
 class AgentStatus(str, Enum):
     """Agent lifecycle states."""
 
@@ -35,17 +19,16 @@ class AgentStatus(str, Enum):
 
 
 class Agent(SQLModel, table=True):
-    """An agent definition within a company."""
+    """An agent definition."""
 
     __tablename__ = "agents"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    company_id: str = Field(foreign_key="companies.id", index=True)
     name: str = Field(index=True)
     description: str | None = None
 
     # Adapter configuration
-    adapter_type: str = Field(default="process")  # e.g. claude_local, kimi_local, process
+    adapter_type: str = Field(default="process")
     adapter_config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # Runtime
@@ -62,7 +45,6 @@ class Agent(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationships
-    company: Company = Relationship(back_populates="agents")
     runs: list["Run"] = Relationship(back_populates="agent")
 
 
@@ -83,7 +65,6 @@ class Task(SQLModel, table=True):
     __tablename__ = "tasks"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    company_id: str = Field(foreign_key="companies.id", index=True)
     agent_id: str | None = Field(default=None, foreign_key="agents.id", index=True)
     parent_id: str | None = Field(default=None, foreign_key="tasks.id")
 
@@ -99,7 +80,6 @@ class Task(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationships
-    company: Company = Relationship(back_populates="tasks")
     runs: list["Run"] = Relationship(back_populates="task")
 
 

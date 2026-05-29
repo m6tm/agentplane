@@ -16,46 +16,9 @@ Check server health.
 }
 ```
 
-## Companies
-
-### POST /api/companies
-
-Create a company.
-
-**Request:**
-```json
-{
-  "name": "Acme Corp",
-  "description": "My company"
-}
-```
-
-**Response:** `Company`
-
-### GET /api/companies
-
-List all companies.
-
-**Response:** `Company[]`
-
-### GET /api/companies/{company_id}
-
-Get a company by ID.
-
-**Response:** `Company`
-
-### DELETE /api/companies/{company_id}
-
-Delete a company.
-
-**Response:**
-```json
-{"deleted": true}
-```
-
 ## Agents
 
-### POST /api/companies/{company_id}/agents
+### POST /api/agents
 
 Create an agent.
 
@@ -76,9 +39,9 @@ Create an agent.
 
 **Response:** `Agent`
 
-### GET /api/companies/{company_id}/agents
+### GET /api/agents
 
-List agents for a company.
+List all agents.
 
 **Response:** `Agent[]`
 
@@ -161,24 +124,11 @@ Execute a pending run.
 
 ## Models
 
-### Company
-
-```json
-{
-  "id": "uuid",
-  "name": "string",
-  "description": "string | null",
-  "created_at": "2026-01-01T00:00:00",
-  "updated_at": "2026-01-01T00:00:00"
-}
-```
-
 ### Agent
 
 ```json
 {
   "id": "uuid",
-  "company_id": "uuid",
   "name": "string",
   "description": "string | null",
   "adapter_type": "string",
@@ -225,13 +175,8 @@ Execute a pending run.
 ### Full execution flow
 
 ```bash
-# 1. Create company
-COMPANY=$(curl -s -X POST http://localhost:3400/api/companies \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Company"}' | jq -r '.id')
-
-# 2. Create agent
-AGENT=$(curl -s -X POST "http://localhost:3400/api/companies/${COMPANY}/agents" \
+# 1. Create agent
+AGENT=$(curl -s -X POST http://localhost:3400/api/agents \
   -H "Content-Type: application/json" \
   -d '{
     "name": "echo-bot",
@@ -239,14 +184,14 @@ AGENT=$(curl -s -X POST "http://localhost:3400/api/companies/${COMPANY}/agents" 
     "adapter_config": {"command": "echo", "args": ["hello"]}
   }' | jq -r '.id')
 
-# 3. Probe agent
+# 2. Probe agent
 curl -s -X POST "http://localhost:3400/api/agents/${AGENT}/probe" | jq
 
-# 4. Create run
+# 3. Create run
 RUN=$(curl -s -X POST "http://localhost:3400/api/agents/${AGENT}/runs" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "say hello"}' | jq -r '.id')
 
-# 5. Execute run
+# 4. Execute run
 curl -s -X POST "http://localhost:3400/api/runs/${RUN}/execute" | jq
 ```

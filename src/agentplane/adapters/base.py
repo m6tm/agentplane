@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 
 @dataclass
@@ -11,7 +11,6 @@ class AdapterContext:
 
     run_id: str
     agent_id: str
-    company_id: str
     task_id: str | None = None
     prompt: str = ""
     config: dict[str, Any] = field(default_factory=dict)

@@ -93,7 +93,6 @@ class TestLocalCliAdapters:
         ctx = AdapterContext(
             run_id="test-run-1",
             agent_id="test-agent",
-            company_id="test-company",
             config={"command": "echo", "args": ["hello", "world"]},
         )
         result = await adapter.execute(ctx)
@@ -107,7 +106,6 @@ class TestLocalCliAdapters:
         ctx = AdapterContext(
             run_id="test-run-2",
             agent_id="test-agent",
-            company_id="test-company",
             config={"command": "sleep", "args": ["10"], "timeout_seconds": 1},
         )
         result = await adapter.execute(ctx)

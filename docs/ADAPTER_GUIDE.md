@@ -32,7 +32,7 @@ class MyAdapter(Adapter):
 |---|---|
 | `run_id` | Unique execution ID |
 | `agent_id` | Agent definition ID |
-| `company_id` | Company scope |
+| `task_id` | Optional linked task |
 | `task_id` | Optional linked task |
 | `prompt` | The prompt / instruction |
 | `config` | Agent's `adapter_config` dict |
@@ -144,7 +144,7 @@ async def test_my_adapter():
     ctx = AdapterContext(
         run_id="test-1",
         agent_id="agent-1",
-        company_id="company-1",
+        task_id="task-1",
         config={"key": "value"},
     )
     result = await adapter.execute(ctx)

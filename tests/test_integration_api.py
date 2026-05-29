@@ -1,6 +1,6 @@
 """End-to-end API integration tests.
 
-Tests the full flow: company -> agent -> run for multiple adapter types.
+Tests the full flow: agent -> run for multiple adapter types.
 """
 
 import pytest
@@ -19,13 +19,6 @@ async def setup_db():
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
-
-
-@pytest.fixture
-async def company(client: AsyncClient):
-    resp = await client.post("/api/companies", json={"name": "TestCorp"})
-    assert resp.status_code == 200
-    return resp.json()
 
 
 class TestAgentLifecycle:
@@ -48,13 +41,13 @@ class TestAgentLifecycle:
 
     @pytest.mark.parametrize("adapter_type", ADAPTER_TYPES)
     @pytest.mark.asyncio
-    async def test_create_agent(self, client: AsyncClient, company: dict, adapter_type: str):
+    async def test_create_agent(self, client: AsyncClient, adapter_type: str):
         payload = {
             "name": f"agent-{adapter_type}",
             "adapter_type": adapter_type,
             "adapter_config": {"command": "echo"} if adapter_type in ("process", "acpx_local") else {},
         }
-        resp = await client.post(f"/api/companies/{company['id']}/agents", json=payload)
+        resp = await client.post("/api/agents", json=payload)
         assert resp.status_code == 200
         data = resp.json()
         assert data["adapter_type"] == adapter_type
@@ -62,14 +55,14 @@ class TestAgentLifecycle:
 
     @pytest.mark.parametrize("adapter_type", ADAPTER_TYPES)
     @pytest.mark.asyncio
-    async def test_probe_agent(self, client: AsyncClient, company: dict, adapter_type: str):
+    async def test_probe_agent(self, client: AsyncClient, adapter_type: str):
         # Create agent
         payload = {
             "name": f"probe-{adapter_type}",
             "adapter_type": adapter_type,
             "adapter_config": {"command": "echo"} if adapter_type in ("process", "acpx_local") else {},
         }
-        resp = await client.post(f"/api/companies/{company['id']}/agents", json=payload)
+        resp = await client.post("/api/agents", json=payload)
         agent_id = resp.json()["id"]
 
         # Probe
@@ -83,10 +76,10 @@ class TestRunExecution:
     """End-to-end run execution via API."""
 
     @pytest.mark.asyncio
-    async def test_process_run_full_flow(self, client: AsyncClient, company: dict):
+    async def test_process_run_full_flow(self, client: AsyncClient):
         # 1. Create agent
         resp = await client.post(
-            f"/api/companies/{company['id']}/agents",
+            "/api/agents",
             json={
                 "name": "echo-agent",
                 "adapter_type": "process",
@@ -114,10 +107,10 @@ class TestRunExecution:
         assert "integration-test-passed" in (data["stdout"] or "")
 
     @pytest.mark.asyncio
-    async def test_run_failure_captured(self, client: AsyncClient, company: dict):
+    async def test_run_failure_captured(self, client: AsyncClient):
         # Create failing agent
         resp = await client.post(
-            f"/api/companies/{company['id']}/agents",
+            "/api/agents",
             json={
                 "name": "fail-agent",
                 "adapter_type": "process",
@@ -136,10 +129,10 @@ class TestRunExecution:
         assert data["exit_code"] == 1
 
     @pytest.mark.asyncio
-    async def test_run_timeout(self, client: AsyncClient, company: dict):
+    async def test_run_timeout(self, client: AsyncClient):
         # Create slow agent
         resp = await client.post(
-            f"/api/companies/{company['id']}/agents",
+            "/api/agents",
             json={
                 "name": "slow-agent",
                 "adapter_type": "process",
@@ -158,9 +151,9 @@ class TestRunExecution:
         assert "Timed out" in (data["stderr"] or "")
 
     @pytest.mark.asyncio
-    async def test_list_runs(self, client: AsyncClient, company: dict):
+    async def test_list_runs(self, client: AsyncClient):
         resp = await client.post(
-            f"/api/companies/{company['id']}/agents",
+            "/api/agents",
             json={"name": "list-agent", "adapter_type": "process", "adapter_config": {"command": "echo"}},
         )
         agent_id = resp.json()["id"]
@@ -173,9 +166,9 @@ class TestRunExecution:
         assert len(resp.json()) == 3
 
     @pytest.mark.asyncio
-    async def test_agent_with_cloud_adapter(self, client: AsyncClient, company: dict):
+    async def test_agent_with_cloud_adapter(self, client: AsyncClient):
         resp = await client.post(
-            f"/api/companies/{company['id']}/agents",
+            "/api/agents",
             json={
                 "name": "cursor-cloud-agent",
                 "adapter_type": "cursor_cloud",

@@ -12,10 +12,9 @@ from agentplane.adapters.registry import get_adapter
 class AgentService:
     """CRUD and execution for agents."""
 
-    async def create(self, company_id: str, data: AgentCreate) -> Agent:
+    async def create(self, data: AgentCreate) -> Agent:
         async with get_async_session() as session:
             agent = Agent(
-                company_id=company_id,
                 name=data.name,
                 description=data.description,
                 adapter_type=data.adapter_type,
@@ -28,21 +27,17 @@ class AgentService:
             await session.refresh(agent)
             return agent
 
-    async def list(self, company_id: str) -> list[Agent]:
+    async def list(self) -> list[Agent]:
         async with get_async_session() as session:
             result = await session.execute(
-                select(Agent)
-                .where(Agent.company_id == company_id)
-                .options(selectinload(Agent.runs))
+                select(Agent).options(selectinload(Agent.runs))
             )
             return list(result.scalars().all())
 
     async def get(self, agent_id: str) -> Agent | None:
         async with get_async_session() as session:
             result = await session.execute(
-                select(Agent)
-                .where(Agent.id == agent_id)
-                .options(selectinload(Agent.runs))
+                select(Agent).where(Agent.id == agent_id).options(selectinload(Agent.runs))
             )
             return result.scalar_one_or_none()
 

@@ -17,7 +17,6 @@ async def test_process_adapter_echo(adapter):
     ctx = AdapterContext(
         run_id="test-1",
         agent_id="agent-1",
-        company_id="company-1",
         config={"command": "echo", "args": ["hello"]},
     )
     result = await adapter.execute(ctx)

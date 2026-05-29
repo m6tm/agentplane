@@ -7,21 +7,18 @@ from agentplane.services.agent_service import AgentService
 
 service = AgentService()
 
-# Company-scoped router (mounted under /api/companies/{company_id}/agents)
-company_router = APIRouter()
-
-@company_router.post("", response_model=Agent)
-async def create_agent(company_id: str, data: AgentCreate):
-    return await service.create(company_id, data)
-
-
-@company_router.get("", response_model=list[Agent])
-async def list_agents(company_id: str):
-    return await service.list(company_id)
-
-
-# Agent-scoped router (mounted under /api/agents)
+# Agent router
 agent_router = APIRouter()
+
+@agent_router.post("", response_model=Agent)
+async def create_agent(data: AgentCreate):
+    return await service.create(data)
+
+
+@agent_router.get("", response_model=list[Agent])
+async def list_agents():
+    return await service.list()
+
 
 @agent_router.get("/{agent_id}", response_model=Agent)
 async def get_agent(agent_id: str):
