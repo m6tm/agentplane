@@ -31,3 +31,9 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+
+# Tauri desktop app
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/dist/
+desktop/.turbo

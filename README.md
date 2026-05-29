@@ -165,6 +165,18 @@ AGENTPLANE_PORT=3400
 AGENTPLANE_DEBUG=false
 ```
 
+## Desktop App (Tauri)
+
+A Tauri v2 desktop shell lives in [`desktop/`](desktop/). It wraps the same FastAPI backend in a native window and can be removed at any time without touching the Python code.
+
+```bash
+cd desktop
+pnpm install
+pnpm tauri:dev    # opens a native window + auto-starts the Python backend
+```
+
+See [`desktop/README.md`](desktop/README.md) for build instructions and removal steps.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — System design and data flow

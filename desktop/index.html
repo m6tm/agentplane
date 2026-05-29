@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentplane</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo"></div>
+          <span>Agentplane</span>
+        </div>
+        <nav>
+          <a href="#" class="nav-item active" data-section="dashboard">Dashboard</a>
+          <a href="#" class="nav-item" data-section="agents">Agents</a>
+          <a href="#" class="nav-item" data-section="runs">Runs</a>
+          <a href="#" class="nav-item" data-section="settings">Settings</a>
+        </nav>
+        <div class="backend-status">
+          <span id="status-dot" class="dot"></span>
+          <span id="status-text">Checking…</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <h1 id="page-title">Dashboard</h1>
+          <div class="actions">
+            <button id="refresh-btn" class="btn btn-ghost">Refresh</button>
+            <button id="open-api-btn" class="btn btn-primary">Open API docs</button>
+          </div>
+        </header>
+
+        <section id="loading" class="center">
+          <div class="spinner"></div>
+          <p>Connecting to Agentplane backend…</p>
+          <code id="backend-url"></code>
+        </section>
+
+        <section id="error" class="center hidden">
+          <h2>Backend unreachable</h2>
+          <p>
+            Could not connect to the Agentplane backend on <code id="error-url"></code>.<br />
+            Make sure it is running:
+          </p>
+          <pre><code>uv run agentplane run</code></pre>
+        </section>
+
+        <section id="content" class="hidden">
+          <div id="dashboard" class="section-panel">
+            <div class="cards-grid">
+              <div class="card">
+                <h3>Agents</h3>
+                <p class="metric" id="metric-agents">—</p>
+              </div>
+              <div class="card">
+                <h3>Runs</h3>
+                <p class="metric" id="metric-runs">—</p>
+              </div>
+              <div class="card">
+                <h3>Adapters</h3>
+                <p class="metric" id="metric-adapters">—</p>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Recent Agents</h3>
+              <ul id="recent-agents" class="list"></ul>
+            </div>
+          </div>
+
+          <div id="agents-section" class="section-panel hidden">
+            <div class="panel">
+              <h3>All Agents</h3>
+              <ul id="all-agents" class="list"></ul>
+            </div>
+          </div>
+
+          <div id="runs-section" class="section-panel hidden">
+            <div class="panel">
+              <h3>Recent Runs</h3>
+              <p class="muted">Runs view coming soon.</p>
+            </div>
+          </div>
+
+          <div id="settings-section" class="section-panel hidden">
+            <div class="panel">
+              <h3>Settings</h3>
+              <p class="muted">Settings coming soon.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
