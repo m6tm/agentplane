@@ -2,10 +2,12 @@
 
 from fastapi import APIRouter, HTTPException
 
-from agentplane.core.models import Agent, AgentCreate, AgentUpdate
+from agentplane.core.models import Agent, AgentCreate, AgentUpdate, Signal
 from agentplane.services.agent_service import AgentService
+from agentplane.services.signal_service import SignalService
 
 service = AgentService()
+signal_service = SignalService()
 
 # Agent router
 agent_router = APIRouter()
@@ -47,3 +49,11 @@ async def delete_agent(agent_id: str):
 @agent_router.post("/{agent_id}/probe")
 async def probe_agent(agent_id: str):
     return await service.probe(agent_id)
+
+
+@agent_router.get("/{agent_id}/signals", response_model=list[Signal])
+async def list_agent_signals(agent_id: str):
+    agent = await service.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return await signal_service.list_for_agent(agent_id)
