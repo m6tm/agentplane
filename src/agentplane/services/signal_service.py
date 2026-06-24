@@ -1,0 +1,155 @@
+"""Signal generation service.
+
+Fetches market data for an agent's symbol and evaluates the agent's strategy
+to detect trading opportunities.
+"""
+
+from typing import Any
+
+import structlog
+
+from agentplane.core.db import get_async_session
+from agentplane.core.models import Agent, Signal, SignalDirection, SignalStatus, Strategy
+from agentplane.services.llm_service import LLMService
+from agentplane.services.market_data_service import MarketDataService
+from agentplane.services.memory_service import MemoryService
+
+logger = structlog.get_logger()
+
+
+class SignalService:
+    """Generate trading signals from market data and strategy rules."""
+
+    def __init__(self):
+        self._memory_service = MemoryService()
+        self._market_data_service = MarketDataService()
+
+    async def generate(self, agent: Agent) -> Signal | None:
+        """Generate a signal for an agent if strategy conditions are met."""
+        strategy = await self._get_strategy(agent.strategy_id)
+        if strategy is None:
+            logger.warning("signal.no_strategy", agent_id=agent.id)
+            return None
+
+        symbol = agent.adapter_config.get("symbol")
+        if not symbol:
+            logger.warning("signal.no_symbol", agent_id=agent.id)
+            return None
+
+        data = await self._market_data_service.fetch_history(
+            agent,
+            symbol,
+            period=agent.adapter_config.get("period", "5d"),
+            interval=agent.adapter_config.get("interval", "1d"),
+        )
+        if not data:
+            logger.warning("signal.no_data", agent_id=agent.id, symbol=symbol)
+            return None
+
+        memory_context = await self._memory_service.compute_context(agent.id)
+        direction = await self._evaluate(agent, strategy, data, memory_context)
+        if direction is None:
+            return None
+
+        confidence = 0.3 if memory_context["critical_count"] > 0 else 0.5
+
+        snapshot = {
+            "symbol": symbol,
+            "latest_close": data[-1]["close"],
+            "previous_close": data[-2]["close"] if len(data) > 1 else None,
+            "latest_timestamp": data[-1]["timestamp"],
+            "strategy": strategy.name,
+            "memory_context": memory_context,
+        }
+
+        async with get_async_session() as session:
+            signal = Signal(
+                agent_id=agent.id,
+                symbol=symbol,
+                direction=direction,
+                confidence=confidence,
+                setup_name=strategy.name,
+                market_data_snapshot=snapshot,
+                status=SignalStatus.DETECTED,
+            )
+            session.add(signal)
+            await session.commit()
+            await session.refresh(signal)
+            return signal
+
+    async def _get_strategy(self, strategy_id: str | None) -> Strategy | None:
+        if strategy_id is None:
+            return None
+        async with get_async_session() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(select(Strategy).where(Strategy.id == strategy_id))
+            return result.scalar_one_or_none()
+
+    async def _evaluate(
+        self,
+        agent: Agent,
+        strategy: Strategy,
+        data: list[dict[str, Any]],
+        memory_context: dict[str, Any],
+    ) -> SignalDirection | None:
+        """Evaluate strategy rules against market data.
+
+        If the agent has an LLM adapter configured (default: kimi_local), the
+        LLM is asked first. When the LLM is unavailable or returns HOLD, fall
+        back to the deterministic rules defined by the strategy.
+        """
+        if len(data) < 2:
+            return None
+
+        # Try LLM decision first when configured
+        llm_adapter = agent.adapter_config.get("llm_adapter")
+        if llm_adapter:
+            llm = LLMService(adapter_type=llm_adapter)
+            llm_direction = await llm.decide_trade_direction(
+                agent, strategy, data, memory_context
+            )
+            if llm_direction is not None:
+                logger.info(
+                    "signal.llm_direction",
+                    agent_id=agent.id,
+                    direction=llm_direction,
+                    adapter=llm_adapter,
+                )
+                return llm_direction
+            logger.info(
+                "signal.llm_fallback_to_rules",
+                agent_id=agent.id,
+                adapter=llm_adapter,
+            )
+
+        rules = strategy.entry_rules or {}
+        rule_type = rules.get("type", "price_above_previous_close")
+
+        if rule_type == "price_above_previous_close":
+            if data[-1]["close"] > data[-2]["close"]:
+                return SignalDirection.LONG
+            if data[-1]["close"] < data[-2]["close"]:
+                return SignalDirection.SHORT
+
+        if rule_type == "always_long":
+            return SignalDirection.LONG
+
+        return None
+
+    async def list_for_agent(self, agent_id: str) -> list[Signal]:
+        """List signals generated by an agent."""
+        async with get_async_session() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(
+                select(Signal).where(Signal.agent_id == agent_id).order_by(Signal.created_at.desc())
+            )
+            return list(result.scalars().all())
+
+    async def last_price(self, agent: Agent) -> float | None:
+        """Fetch the latest closing price for the agent's symbol."""
+        symbol = agent.adapter_config.get("symbol")
+        if not symbol:
+            return None
+        return await self._market_data_service.get_last_price(agent, symbol)
