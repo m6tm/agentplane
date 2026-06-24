@@ -1,6 +1,7 @@
 """Application configuration."""
 
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     json_logs: bool = False
+
+    # OANDA credentials (optional — can also be provided per-agent in adapter_config)
+    oanda_token: str | None = None
+    oanda_account_id: str | None = None
 
 
 settings = Settings()

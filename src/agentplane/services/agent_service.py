@@ -1,24 +1,30 @@
-"""Agent business logic."""
+"""Agent (trader) business logic."""
 
 from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from agentplane.core.db import get_async_session
-from agentplane.core.models import Agent, AgentCreate, AgentUpdate, Run, RunStatus
 from agentplane.adapters.registry import get_adapter
+from agentplane.core.db import get_async_session
+from agentplane.core.models import Agent, AgentCreate, AgentUpdate
 
 
 class AgentService:
-    """CRUD and execution for agents."""
+    """CRUD and diagnostics for agents/traders."""
 
     async def create(self, data: AgentCreate) -> Agent:
         async with get_async_session() as session:
             agent = Agent(
                 name=data.name,
                 description=data.description,
+                role=data.role,
+                trading_desk_id=data.trading_desk_id,
+                strategy_id=data.strategy_id,
                 adapter_type=data.adapter_type,
                 adapter_config=data.adapter_config,
+                risk_profile=data.risk_profile,
+                skills=data.skills,
                 heartbeat_interval_seconds=data.heartbeat_interval_seconds,
                 max_budget_usd=data.max_budget_usd,
             )
@@ -30,14 +36,26 @@ class AgentService:
     async def list(self) -> list[Agent]:
         async with get_async_session() as session:
             result = await session.execute(
-                select(Agent).options(selectinload(Agent.runs))
+                select(Agent).options(
+                    selectinload(Agent.runs),
+                    selectinload(Agent.signals),
+                    selectinload(Agent.positions),
+                    selectinload(Agent.trades),
+                    selectinload(Agent.lessons),
+                )
             )
             return list(result.scalars().all())
 
     async def get(self, agent_id: str) -> Agent | None:
         async with get_async_session() as session:
             result = await session.execute(
-                select(Agent).where(Agent.id == agent_id).options(selectinload(Agent.runs))
+                select(Agent).where(Agent.id == agent_id).options(
+                    selectinload(Agent.runs),
+                    selectinload(Agent.signals),
+                    selectinload(Agent.positions),
+                    selectinload(Agent.trades),
+                    selectinload(Agent.lessons),
+                )
             )
             return result.scalar_one_or_none()
 

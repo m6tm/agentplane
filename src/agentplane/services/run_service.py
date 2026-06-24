@@ -1,14 +1,13 @@
 """Run execution service."""
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select
 
-from agentplane.core.db import get_async_session
-from agentplane.core.models import Run, RunCreate, RunStatus, Agent
 from agentplane.adapters.base import AdapterContext
 from agentplane.adapters.registry import get_adapter
+from agentplane.core.db import get_async_session
+from agentplane.core.models import Agent, Run, RunCreate, RunStatus
 
 
 class RunService:
