@@ -4,7 +4,7 @@ Tests the full flow: agent -> run for multiple adapter types.
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from agentplane.api.main import app
 from agentplane.core.db import init_async_db
@@ -36,8 +36,13 @@ class TestAgentLifecycle:
         "pi_local",
         "acpx_local",
         "cursor_cloud",
-        "openclaw_gateway",
+        "paper_broker",
     ]
+
+    def _adapter_config(self, adapter_type: str) -> dict:
+        if adapter_type in ("process", "acpx_local"):
+            return {"command": "echo"}
+        return {}
 
     @pytest.mark.parametrize("adapter_type", ADAPTER_TYPES)
     @pytest.mark.asyncio
@@ -45,7 +50,7 @@ class TestAgentLifecycle:
         payload = {
             "name": f"agent-{adapter_type}",
             "adapter_type": adapter_type,
-            "adapter_config": {"command": "echo"} if adapter_type in ("process", "acpx_local") else {},
+            "adapter_config": self._adapter_config(adapter_type),
         }
         resp = await client.post("/api/agents", json=payload)
         assert resp.status_code == 200
@@ -60,7 +65,7 @@ class TestAgentLifecycle:
         payload = {
             "name": f"probe-{adapter_type}",
             "adapter_type": adapter_type,
-            "adapter_config": {"command": "echo"} if adapter_type in ("process", "acpx_local") else {},
+            "adapter_config": self._adapter_config(adapter_type),
         }
         resp = await client.post("/api/agents", json=payload)
         agent_id = resp.json()["id"]
@@ -154,7 +159,11 @@ class TestRunExecution:
     async def test_list_runs(self, client: AsyncClient):
         resp = await client.post(
             "/api/agents",
-            json={"name": "list-agent", "adapter_type": "process", "adapter_config": {"command": "echo"}},
+            json={
+                "name": "list-agent",
+                "adapter_type": "process",
+                "adapter_config": {"command": "echo"},
+            },
         )
         agent_id = resp.json()["id"]
 

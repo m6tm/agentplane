@@ -2,9 +2,9 @@
 
 import pytest
 
-from agentplane.adapters.base import AdapterContext, AdapterResult
+from agentplane.adapters.base import AdapterContext
 from agentplane.adapters.builtin.process import ProcessAdapter
-from agentplane.adapters.registry import list_adapters, get_adapter
+from agentplane.adapters.registry import get_adapter, list_adapters
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """API integration tests."""
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from agentplane.api.main import app
 from agentplane.core.db import init_async_db

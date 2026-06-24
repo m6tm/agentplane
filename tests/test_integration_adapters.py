@@ -8,9 +8,8 @@ Verifies that every adapter registered in the system:
 
 import pytest
 
-from agentplane.adapters.base import Adapter, AdapterContext, AdapterResult
-from agentplane.adapters.registry import list_adapters, get_adapter
-
+from agentplane.adapters.base import AdapterContext
+from agentplane.adapters.registry import get_adapter, list_adapters
 
 # Expected adapters matching Paperclip's built-in set
 EXPECTED_ADAPTERS = {
@@ -22,10 +21,13 @@ EXPECTED_ADAPTERS = {
     "gemini_local": {"label": "Gemini CLI (local)", "models_count": 6},
     "grok_local": {"label": "Grok Build (local)", "models_count": 1},
     "kimi_local": {"label": "Kimi Code (local)", "models_count": 2},
-    "openclaw_gateway": {"label": "OpenClaw Gateway"},
     "opencode_local": {"label": "OpenCode (local)", "models_count": 1},
+    "oanda": {"label": "OANDA"},
+    "orchestrator": {"label": "Orchestrator"},
+    "paper_broker": {"label": "Paper Broker"},
     "pi_local": {"label": "Pi (local)", "models_count": 1},
     "process": {"label": "Local Process"},
+    "static_data": {"label": "Static Data"},
 }
 
 
@@ -42,9 +44,7 @@ class TestAdapterRegistry:
         extra = registered - set(EXPECTED_ADAPTERS.keys())
         assert not extra, f"Unexpected adapters: {extra}"
 
-    @pytest.mark.parametrize("adapter_type,expected", [
-        (t, e) for t, e in EXPECTED_ADAPTERS.items()
-    ])
+    @pytest.mark.parametrize("adapter_type,expected", list(EXPECTED_ADAPTERS.items()))
     def test_adapter_metadata(self, adapter_type: str, expected: dict):
         adapter = get_adapter(adapter_type)
         assert adapter is not None, f"Adapter {adapter_type} not found"
@@ -144,14 +144,33 @@ class TestCloudAdapters:
         result = await adapter.probe({"env": {"CURSOR_API_KEY": "test"}})
         assert result["available"] is True
 
-    @pytest.mark.asyncio
-    async def test_openclaw_probe_without_url(self):
-        adapter = get_adapter("openclaw_gateway")
-        result = await adapter.probe({})
-        assert result["available"] is False
+
+class TestTradingAdapters:
+    """Integration tests for trading adapters."""
 
     @pytest.mark.asyncio
-    async def test_openclaw_probe_with_url(self):
-        adapter = get_adapter("openclaw_gateway")
-        result = await adapter.probe({"url": "wss://example.com"})
+    async def test_paper_broker_buy(self):
+        adapter = get_adapter("paper_broker")
+        ctx = AdapterContext(
+            run_id="test-trade-1",
+            agent_id="test-agent",
+            config={
+                "action": "buy",
+                "symbol": "AAPL",
+                "quantity": 10,
+                "price": 150.0,
+                "slippage_pct": 0.1,
+            },
+        )
+        result = await adapter.execute(ctx)
+        assert result.success is True
+        assert "AAPL" in result.stdout
+        assert "buy" in result.stdout.lower()
+
+    @pytest.mark.asyncio
+    async def test_paper_broker_probe(self):
+        adapter = get_adapter("paper_broker")
+        result = await adapter.probe({})
         assert result["available"] is True
+        assert result["mode"] == "paper"
+
