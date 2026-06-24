@@ -31,6 +31,7 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+.demo-agent-id
 
 # Tauri desktop app
 desktop/node_modules/
