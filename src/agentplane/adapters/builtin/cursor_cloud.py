@@ -40,7 +40,8 @@ class CursorCloudAdapter(Adapter):
         )
 
     async def probe(self, config: dict[str, Any]) -> dict[str, Any]:
-        api_key = config.get("env", {}).get("CURSOR_API_KEY") if isinstance(config.get("env"), dict) else None
+        env = config.get("env")
+        api_key = env.get("CURSOR_API_KEY") if isinstance(env, dict) else None
         return {
             "available": api_key is not None,
             "note": "Requires CURSOR_API_KEY in env config",

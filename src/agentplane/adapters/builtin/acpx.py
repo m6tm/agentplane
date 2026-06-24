@@ -2,8 +2,8 @@
 
 from typing import Any
 
+from agentplane.adapters.base import AdapterContext
 from agentplane.adapters.builtin._cli_base import LocalCliAdapter
-from agentplane.adapters.base import AdapterContext, AdapterResult
 from agentplane.adapters.registry import register_adapter
 
 

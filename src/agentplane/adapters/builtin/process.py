@@ -66,7 +66,7 @@ class ProcessAdapter(Adapter):
                 stderr=stderr,
                 summary=stdout[:500] if stdout else None,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc is not None and proc.returncode is None:
                 proc.kill()
                 await proc.wait()

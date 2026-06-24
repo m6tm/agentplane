@@ -9,15 +9,14 @@ import importlib
 import inspect
 import pkgutil
 from pathlib import Path
-from typing import Type
 
 from agentplane.adapters.base import Adapter
 
 # Registry: adapter_type -> Adapter class
-_ADAPTER_REGISTRY: dict[str, Type[Adapter]] = {}
+_ADAPTER_REGISTRY: dict[str, type[Adapter]] = {}
 
 
-def register_adapter(adapter_cls: Type[Adapter]) -> Type[Adapter]:
+def register_adapter(adapter_cls: type[Adapter]) -> type[Adapter]:
     """Decorator / function to register an adapter class."""
     instance = adapter_cls()
     _ADAPTER_REGISTRY[instance.type] = adapter_cls
