@@ -38,23 +38,17 @@ class KimiAdapter(LocalCliAdapter):
         config = ctx.config or {}
         command = self._resolve_command(config)
         model = config.get("model", self.default_model)
-        max_turns = config.get("max_turns", 0)
 
-        args = ["--print", "--output-format=stream-json"]
+        args = ["-p", ctx.prompt or "No prompt provided", "--output-format", "stream-json"]
 
         if ctx.session_id:
-            args.extend(["-r", ctx.session_id])
+            args.extend(["-S", ctx.session_id])
         if model and model != self.default_model:
-            args.extend(["--model", model])
-        if max_turns > 0:
-            args.extend(["--max-turns", str(max_turns)])
+            args.extend(["-m", model])
 
         extra = config.get("extraArgs", [])
         if isinstance(extra, list):
             args.extend([str(a) for a in extra])
-
-        # Kimi accepts prompt via -p flag
-        args.extend(["-p", ctx.prompt or "No prompt provided"])
 
         env = self._build_env(ctx)
         cwd = self._build_cwd(ctx)

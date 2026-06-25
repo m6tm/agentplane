@@ -232,6 +232,66 @@ class OrchestratorService:
             "message_id": message.id,
         }
 
+    async def process_user_message(self, orchestrator_id: str) -> str | None:
+        """Read the last user message and return the LLM reply.
+        
+        Used by the API to provide immediate conversational responses.
+        """
+        unread = await self._message_service.list_unread(orchestrator_id)
+        
+        # Find the most recent user message
+        user_messages = [m for m in unread if m.sender_agent_id == "user"]
+        if not user_messages:
+            return None
+        
+        msg = user_messages[-1]  # Most recent
+        
+        agent = await self._agent_service.get(orchestrator_id)
+        llm_config = agent.adapter_config if agent else {}
+        llm_adapter = llm_config.get("llm_adapter", "kimi_local")
+
+        agents = await self._agent_service.list()
+        team = [a for a in agents if a.id != orchestrator_id]
+
+        llm = LLMService(adapter_type=llm_adapter)
+        reply_text = await llm.orchestrator_reply(
+            orchestrator_id=orchestrator_id,
+            sender=msg.sender_agent_id or "unknown",
+            message_type=str(msg.message_type),
+            payload=msg.payload,
+            team_size=len(team),
+            team_names=[a.name for a in team],
+            config=llm_config,
+        )
+
+        if reply_text:
+            # Extract clean text from kimi stream-json output
+            clean_reply = self._extract_reply_text(reply_text)
+            logger.info(
+                "orchestrator.conversation_reply",
+                message_id=msg.id,
+                reply=clean_reply,
+                adapter=llm_adapter,
+            )
+            await self._message_service.mark_read(msg.id)
+            return clean_reply
+
+        await self._message_service.mark_read(msg.id)
+        return reply_text
+
+    def _extract_reply_text(self, raw: str) -> str:
+        """Extract clean assistant text from kimi stream-json output."""
+        import json
+        lines = raw.strip().split('\n')
+        for line in lines:
+            try:
+                data = json.loads(line)
+                if data.get('role') == 'assistant' and 'content' in data:
+                    return data['content']
+            except json.JSONDecodeError:
+                continue
+        return raw
+
     async def _process_inbox(self, orchestrator_id: str) -> list[str]:
         """Read and answer messages addressed to the orchestrator.
 

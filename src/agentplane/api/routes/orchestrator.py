@@ -24,19 +24,30 @@ class OrchestratorMessageRequest(SQLModel):
 
 @router.post("/messages")
 async def send_message_to_orchestrator(data: OrchestratorMessageRequest):
-    """Send a message to the orchestrator agent.
+    """Send a message to the orchestrator agent and process it immediately.
 
-    The orchestrator will read it during its next heartbeat and respond
-    only in the terminal (no HTTP response body and no stored reply).
+    Returns the orchestrator's LLM reply in the response body.
     """
     orchestrator = await _get_orchestrator()
+    
+    # Send user message
     await message_service.send(
         sender_agent_id="user",
         recipient_agent_id=orchestrator.id,
         message_type=data.message_type,
         payload=data.payload,
     )
-    return {"sent": True}
+    
+    # Process immediately and get the LLM reply
+    from agentplane.services.orchestrator_service import OrchestratorService
+    service = OrchestratorService()
+    reply = await service.process_user_message(orchestrator.id)
+    
+    return {
+        "sent": True,
+        "processed": True,
+        "reply": reply,
+    }
 
 
 @router.get("/messages", response_model=list[AgentMessage])

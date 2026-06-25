@@ -46,10 +46,20 @@ class LocalCliAdapter(Adapter):
         timeout: int,
         on_log: Any | None = None,
     ) -> AdapterResult:
+        import os
+        import shutil
         proc = None
         try:
+            resolved = shutil.which(command)
+            if resolved is None:
+                return AdapterResult(
+                    success=False,
+                    exit_code=-1,
+                    stderr=f"Command not found: {command}",
+                )
+            resolved = os.path.normpath(resolved)
             proc = await asyncio.create_subprocess_exec(
-                command,
+                resolved,
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

@@ -10,6 +10,7 @@ ifeq ($(shell uname -o),Android)
     export ANDROID_API_LEVEL ?= $(shell getprop ro.build.version.sdk 2>/dev/null)
     PYTHON := .venv/bin/python
 else
+    export UV_LINK_MODE := copy
     PYTHON := uv run python
 endif
 
