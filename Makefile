@@ -1,9 +1,17 @@
 .PHONY: help install init run run-reload test test-q lint format check clean reset-db demo stop-demo
 
-PYTHON := uv run python
 UV := uv
 PORT := 3400
 HOST := 127.0.0.1
+
+# Termux/Android workaround: uv does not install Android wheels, so we fall back
+# to pip; avoid uv run because it would try to re-sync the pip-managed venv.
+ifeq ($(shell uname -o),Android)
+    export ANDROID_API_LEVEL ?= $(shell getprop ro.build.version.sdk 2>/dev/null)
+    PYTHON := .venv/bin/python
+else
+    PYTHON := uv run python
+endif
 
 help: ## Show this help
 	@echo "Agentplane - available commands"
@@ -11,7 +19,12 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install dependencies (dev included)
+ifeq ($(shell uname -o),Android)
+	$(UV) venv --allow-existing
+	.venv/bin/pip install -e ".[dev]"
+else
 	$(UV) sync --extra dev
+endif
 
 init: ## Initialize database and data directory
 	$(PYTHON) -m agentplane init
@@ -23,16 +36,24 @@ run-reload: ## Start the server with auto-reload
 	$(PYTHON) -m agentplane run --host $(HOST) --port $(PORT) --reload
 
 test: ## Run the test suite
-	$(UV) run pytest -v
+	$(PYTHON) -m pytest -v
 
 test-q: ## Run tests quietly
-	$(UV) run pytest -q
+	$(PYTHON) -m pytest -q
 
 lint: ## Run ruff linter
-	$(UV) run ruff check src tests
+ifeq ($(shell uname -o),Android)
+	@echo "ruff is skipped on Termux (not installed to avoid long Rust builds)"
+else
+	$(PYTHON) -m ruff check src tests
+endif
 
 format: ## Format code with ruff
-	$(UV) run ruff format src tests
+ifeq ($(shell uname -o),Android)
+	@echo "ruff is skipped on Termux (not installed to avoid long Rust builds)"
+else
+	$(PYTHON) -m ruff format src tests
+endif
 
 check: lint test ## Run lint + tests (CI gate)
 
