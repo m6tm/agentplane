@@ -15,12 +15,14 @@ from agentplane.core.models import AgentStatus, AgentUpdate, TradingDesk, Tradin
 from agentplane.services.agent_service import AgentService
 from agentplane.services.agent_communication_service import AgentCommunicationService
 from agentplane.services.agent_service import AgentService
+from agentplane.services.autonomous_decision_service import AutonomousDecisionService
 from agentplane.services.orchestrator_service import OrchestratorService
 from agentplane.services.order_service import OrderService
 from agentplane.services.position_service import PositionService
 from agentplane.services.risk_service import RiskService
 from agentplane.services.scanner_service import ScannerService
 from agentplane.services.signal_service import SignalService
+from agentplane.services.strategy_file_service import StrategyFileService
 
 logger = structlog.get_logger()
 
@@ -38,6 +40,8 @@ class HeartbeatScheduler:
         self._position_service = PositionService()
         self._scanner_service = ScannerService()
         self._comm_service = AgentCommunicationService()
+        self._decision_service = AutonomousDecisionService()
+        self._strategy_file_service = StrategyFileService()
 
     async def start_agent(self, agent_id: str) -> bool:
         """Start heartbeat loop for an agent."""
@@ -178,6 +182,25 @@ class HeartbeatScheduler:
             await self._run_orchestrator_once(agent_id)
             return
 
+        # Ensure strategy file exists
+        strategy_file = self._strategy_file_service.create_default(agent)
+        
+        # Read current strategy
+        strategy = self._strategy_file_service.read(agent_id)
+        if strategy is None:
+            logger.warning("heartbeat.no_strategy", agent_id=agent_id)
+            return
+
+        strategy_summary = self._strategy_file_service.get_strategy_summary(agent_id)
+        logger.info(
+            "heartbeat.strategy_loaded",
+            agent_id=agent_id,
+            strategy=strategy_summary["name"],
+            version=strategy_summary["version"],
+            pairs=strategy_summary["preferred_pairs"],
+            timeframes=strategy_summary["preferred_timeframes"],
+        )
+
         await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.SCANNING))
 
         try:
@@ -206,7 +229,30 @@ class HeartbeatScheduler:
                     agent, agent.adapter_config.get("symbol", ""), last_price
                 )
 
-            # 3. Scan next symbol/timeframe in watchlist
+            # 3. Use strategy file to guide decisions
+            preferred_pairs = strategy_summary.get("preferred_pairs", [])
+            preferred_timeframes = strategy_summary.get("preferred_timeframes", [])
+            max_positions = strategy_summary.get("max_positions", 3)
+            risk_per_trade = strategy_summary.get("risk_per_trade_pct", 1.0)
+
+            # Build watchlist from strategy preferences
+            watchlist = [
+                {"symbol": pair, "interval": tf, "period": "5d"}
+                for pair in preferred_pairs
+                for tf in preferred_timeframes
+            ]
+
+            if not watchlist:
+                logger.warning("heartbeat.no_watchlist", agent_id=agent_id)
+                return
+
+            # Update agent's watchlist in DB
+            await self._agent_service.update(
+                agent_id, 
+                AgentUpdate(watchlist=watchlist)
+            )
+
+            # 4. Scan next symbol/timeframe based on strategy
             signal = await self._scanner_service.scan_next(agent)
             
             if signal is None:
@@ -222,7 +268,7 @@ class HeartbeatScheduler:
                 setup=signal.setup_name,
             )
 
-            # 4. Broadcast opportunity to team
+            # 5. Broadcast opportunity to team
             await self._comm_service.broadcast_opportunity(
                 sender_agent_id=agent_id,
                 symbol=signal.symbol,
@@ -233,7 +279,7 @@ class HeartbeatScheduler:
                 details=signal.market_data_snapshot,
             )
 
-            # 5. Request risk check from risk manager
+            # 6. Request risk check from risk manager
             risk_messages = await self._comm_service.request_risk_check(
                 sender_agent_id=agent_id,
                 symbol=signal.symbol,
@@ -241,7 +287,7 @@ class HeartbeatScheduler:
                 size=1.0,  # Will be refined by risk service
             )
             
-            # 6. Validate risk locally too
+            # 7. Validate risk locally too
             risk_check = await self._risk_service.validate_signal(agent, signal)
             if not risk_check.allowed:
                 logger.warning(
@@ -252,7 +298,7 @@ class HeartbeatScheduler:
                 )
                 return
 
-            # 7. Execute order
+            # 8. Execute order
             logger.info(
                 "signal.executing",
                 agent_id=agent_id,
