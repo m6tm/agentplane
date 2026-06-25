@@ -14,6 +14,7 @@ from agentplane.api.routes import (
     positions,
     runs,
     trading,
+    websocket,
 )
 from agentplane.core.db import init_async_db
 from agentplane.services.state import scheduler
@@ -67,3 +68,4 @@ app.include_router(
     journal.memory_router, prefix="/api/agents/{agent_id}", tags=["Memory"]
 )
 app.include_router(runs.run_router, prefix="/api/runs", tags=["Runs"])
+app.include_router(websocket.router, prefix="/api/ws", tags=["WebSocket"])

@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 
 let apiBase = "http://127.0.0.1:3400";
+let ws: WebSocket | null = null;
+let reconnectInterval: number = 3000;
+let reconnectAttempts: number = 0;
+let maxReconnectAttempts: number = 10;
 
 interface Agent {
   id: string;
@@ -32,11 +36,24 @@ interface Position {
   unrealized_pnl_usd: number | null;
 }
 
+interface LogEntry {
+  level: string;
+  message: string;
+  agent_id: string | null;
+  timestamp: number;
+}
+
+// State
+let agents: Agent[] = [];
+let signals: Signal[] = [];
+let positions: Position[] = [];
+let logs: LogEntry[] = [];
+
 // Neural network visualization
 class NeuralNetwork {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private nodes: Array<{ x: number; y: number; vx: number; vy: number; size: number; pulse: number }> = [];
+  private nodes: Array<{ x: number; y: number; vx: number; vy: number; size: number; pulse: number; agent?: Agent }> = [];
   private connections: Array<{ from: number; to: number; strength: number }> = [];
   private animationId: number = 0;
 
@@ -55,8 +72,33 @@ class NeuralNetwork {
     this.canvas.height = parent.clientHeight;
   }
 
+  updateAgents(newAgents: Agent[]) {
+    // Update nodes based on agents
+    const targetCount = Math.max(newAgents.length, 5);
+    
+    if (this.nodes.length < targetCount) {
+      for (let i = this.nodes.length; i < targetCount; i++) {
+        this.nodes.push({
+          x: Math.random() * this.canvas.width,
+          y: Math.random() * this.canvas.height,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: (Math.random() - 0.5) * 0.5,
+          size: 4 + Math.random() * 4,
+          pulse: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+
+    // Update agent data on nodes
+    newAgents.forEach((agent, i) => {
+      if (i < this.nodes.length) {
+        this.nodes[i].agent = agent;
+      }
+    });
+  }
+
   initNodes() {
-    const count = 20;
+    const count = 15;
     this.nodes = [];
     for (let i = 0; i < count; i++) {
       this.nodes.push({
@@ -117,24 +159,50 @@ class NeuralNetwork {
     // Draw nodes
     this.nodes.forEach((node) => {
       const pulseSize = node.size + Math.sin(node.pulse) * 2;
+      const isAgent = !!node.agent;
+      const isScanning = node.agent?.status === "scanning";
+      const isTrading = node.agent?.status === "trading";
+
+      // Color based on status
+      let color = "#00d4ff"; // Default cyan
+      let glowColor = "rgba(0, 212, 255, 0.3)";
+      
+      if (isScanning) {
+        color = "#ffaa00"; // Orange for scanning
+        glowColor = "rgba(255, 170, 0, 0.4)";
+      } else if (isTrading) {
+        color = "#8844ff"; // Purple for trading
+        glowColor = "rgba(136, 68, 255, 0.4)";
+      } else if (isAgent) {
+        color = "#00ff88"; // Green for active agent
+        glowColor = "rgba(0, 255, 136, 0.3)";
+      }
 
       // Glow
       const gradient = ctx.createRadialGradient(
         node.x, node.y, 0,
         node.x, node.y, pulseSize * 3
       );
-      gradient.addColorStop(0, "rgba(0, 212, 255, 0.3)");
-      gradient.addColorStop(1, "rgba(0, 212, 255, 0)");
+      gradient.addColorStop(0, glowColor);
+      gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.arc(node.x, node.y, pulseSize * 3, 0, Math.PI * 2);
       ctx.fill();
 
       // Core
-      ctx.fillStyle = "#00d4ff";
+      ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.size, 0, Math.PI * 2);
       ctx.fill();
+
+      // Agent name label
+      if (node.agent && node.size > 5) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(node.agent.name, node.x, node.y - pulseSize - 5);
+      }
     });
 
     this.animationId = requestAnimationFrame(() => this.animate());
@@ -163,100 +231,160 @@ async function healthCheck(): Promise<boolean> {
   }
 }
 
-async function fetchAgents(): Promise<Agent[]> {
-  try {
-    const res = await fetch(`${apiBase}/api/agents`);
-    if (!res.ok) return [];
-    return res.json();
-  } catch {
-    return [];
-  }
-}
+// WebSocket connection
+function connectWebSocket() {
+  const wsUrl = apiBase.replace("http://", "ws://").replace("https://", "wss://") + "/api/ws/ws";
+  
+  ws = new WebSocket(wsUrl);
 
-async function fetchSignals(): Promise<Signal[]> {
-  try {
-    const res = await fetch(`${apiBase}/api/agents`);
-    if (!res.ok) return [];
-    const agents = await res.json();
-    const allSignals: Signal[] = [];
-    for (const agent of agents) {
-      const sigRes = await fetch(`${apiBase}/api/agents/${agent.id}/signals`);
-      if (sigRes.ok) {
-        const signals = await sigRes.json();
-        allSignals.push(...signals);
-      }
+  ws.onopen = () => {
+    console.log("WebSocket connected");
+    reconnectAttempts = 0;
+    setStatus(true);
+    addLogEntry("success", "Real-time connection established");
+  };
+
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    handleWebSocketMessage(message);
+  };
+
+  ws.onclose = () => {
+    console.log("WebSocket disconnected");
+    setStatus(false);
+    
+    if (reconnectAttempts < maxReconnectAttempts) {
+      reconnectAttempts++;
+      addLogEntry("warning", `Connection lost. Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`);
+      setTimeout(connectWebSocket, reconnectInterval);
+    } else {
+      addLogEntry("error", "Max reconnection attempts reached. Please refresh.");
     }
-    return allSignals;
-  } catch {
-    return [];
+  };
+
+  ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+    addLogEntry("error", "Connection error");
+  };
+}
+
+function handleWebSocketMessage(message: any) {
+  switch (message.type) {
+    case "initial":
+      agents = message.data.agents || [];
+      signals = message.data.signals || [];
+      positions = message.data.positions || [];
+      updateAllViews();
+      break;
+
+    case "agent_update":
+      updateAgent(message.data);
+      break;
+
+    case "signal":
+      addSignal(message.data);
+      break;
+
+    case "position_update":
+      updatePosition(message.data);
+      break;
+
+    case "log":
+      addLogEntry(message.data.level, message.data.message, message.data.agent_id);
+      break;
+
+    case "heartbeat":
+      updateHeartbeat(message.data);
+      break;
+
+    case "pong":
+      break;
   }
 }
 
-async function fetchPositions(): Promise<Position[]> {
-  try {
-    const res = await fetch(`${apiBase}/api/agents`);
-    if (!res.ok) return [];
-    const agents = await res.json();
-    const allPositions: Position[] = [];
-    for (const agent of agents) {
-      const posRes = await fetch(`${apiBase}/api/agents/${agent.id}/positions`);
-      if (posRes.ok) {
-        const positions = await posRes.json();
-        allPositions.push(...positions);
-      }
-    }
-    return allPositions;
-  } catch {
-    return [];
-  }
-}
-
-function setStatus(online: boolean) {
-  const dot = document.getElementById("status-dot")!;
-  const text = document.getElementById("status-text")!;
-  if (online) {
-    dot.className = "dot online";
-    text.textContent = "Neural Network Online";
+function updateAgent(data: any) {
+  const index = agents.findIndex(a => a.id === data.id);
+  if (index >= 0) {
+    agents[index] = { ...agents[index], ...data };
   } else {
-    dot.className = "dot error";
-    text.textContent = "Network Offline";
+    agents.push(data as Agent);
+  }
+  updateAgentsView();
+  updateMetrics();
+}
+
+function addSignal(data: any) {
+  signals.unshift(data as Signal);
+  if (signals.length > 100) signals.pop();
+  updateSignalsView();
+  updateMetrics();
+  addLogEntry("success", `Signal: ${data.symbol} ${data.direction}`, data.agent_id);
+}
+
+function updatePosition(data: any) {
+  const index = positions.findIndex(p => p.id === data.id);
+  if (index >= 0) {
+    positions[index] = { ...positions[index], ...data };
+  } else {
+    positions.push(data as Position);
+  }
+  updatePositionsView();
+  updateMetrics();
+}
+
+function updateHeartbeat(data: any) {
+  // Update agent status based on heartbeat
+  const agent = agents.find(a => a.id === data.agent_id);
+  if (agent) {
+    agent.status = data.status;
+    updateAgentsView();
   }
 }
 
-function addLogEntry(level: string, message: string, containerId: string = "activity-log") {
-  const container = document.getElementById(containerId);
-  if (!container) return;
+function updateAllViews() {
+  updateMetrics();
+  updateAgentsView();
+  updateSignalsView();
+  updatePositionsView();
+  updateNeuralViz();
+}
 
-  const now = new Date();
-  const time = now.toLocaleTimeString();
+function updateMetrics() {
+  document.getElementById("metric-agents")!.textContent = String(agents.length);
+  document.getElementById("metric-signals")!.textContent = String(signals.length);
+  document.getElementById("metric-positions")!.textContent = String(positions.length);
 
-  const entry = document.createElement("div");
-  entry.className = "log-entry";
-  entry.innerHTML = `
-    <span class="log-time">${time}</span>
-    <span class="log-level ${level}">${level.toUpperCase()}</span>
-    <span class="log-message">${message}</span>
-  `;
+  // Calculate P&L
+  const totalPnl = positions.reduce((sum, p) => sum + (p.unrealized_pnl_usd || 0), 0);
+  document.getElementById("metric-pnl")!.textContent = `$${totalPnl.toFixed(2)}`;
 
-  container.appendChild(entry);
-  container.scrollTop = container.scrollHeight;
-
-  // Keep only last 50 entries
-  while (container.children.length > 50) {
-    container.removeChild(container.firstChild!);
+  const pnlChange = document.getElementById("metric-pnl-change")!;
+  if (totalPnl >= 0) {
+    pnlChange.className = "metric-change";
+    pnlChange.textContent = "+Profit today";
+  } else {
+    pnlChange.className = "metric-change negative";
+    pnlChange.textContent = "-Loss today";
   }
 }
 
-function renderAgentList(id: string, agents: Agent[]) {
-  const el = document.getElementById(id)!;
-  if (agents.length === 0) {
+function updateAgentsView() {
+  const recentEl = document.getElementById("recent-agents")!;
+  const allEl = document.getElementById("all-agents")!;
+
+  renderAgentList(recentEl, agents.slice(0, 6));
+  renderAgentList(allEl, agents);
+}
+
+function renderAgentList(el: HTMLElement, agentList: Agent[]) {
+  if (agentList.length === 0) {
     el.innerHTML = `<li class="muted">No neural agents active</li>`;
     return;
   }
 
-  el.innerHTML = agents
+  el.innerHTML = agentList
     .map((a) => {
-      const statusClass = a.status === "idle" ? "active" : a.status === "scanning" ? "scanning" : "trading";
+      const statusClass = a.status === "idle" ? "active" : a.status === "scanning" ? "scanning" : a.status === "trading" ? "trading" : "";
       const statusText = a.status.toUpperCase();
       const watchlistCount = a.watchlist?.length || 0;
       return `
@@ -272,7 +400,7 @@ function renderAgentList(id: string, agents: Agent[]) {
     .join("");
 }
 
-function renderSignals(signals: Signal[]) {
+function updateSignalsView() {
   const el = document.getElementById("signals-list")!;
   if (signals.length === 0) {
     el.innerHTML = `<div class="muted">No signals detected yet</div>`;
@@ -283,11 +411,13 @@ function renderSignals(signals: Signal[]) {
     .slice(0, 20)
     .map((s) => {
       const directionColor = s.direction === "long" ? "text-success" : "text-error";
+      const agent = agents.find(a => a.id === s.agent_id);
+      const agentName = agent ? agent.name : "Unknown";
       return `
         <div class="list-item">
           <div class="list-item-info">
             <span class="list-item-title">${s.symbol}</span>
-            <span class="list-item-subtitle">Confidence: ${(s.confidence * 100).toFixed(0)}%</span>
+            <span class="list-item-subtitle">${agentName} • Confidence: ${(s.confidence * 100).toFixed(0)}%</span>
           </div>
           <span class="badge ${directionColor}">${s.direction.toUpperCase()}</span>
         </div>
@@ -296,7 +426,7 @@ function renderSignals(signals: Signal[]) {
     .join("");
 }
 
-function renderPositions(positions: Position[]) {
+function updatePositionsView() {
   const el = document.getElementById("positions-list")!;
   if (positions.length === 0) {
     el.innerHTML = `<div class="muted">No open positions</div>`;
@@ -308,11 +438,13 @@ function renderPositions(positions: Position[]) {
       const pnl = p.unrealized_pnl_usd || 0;
       const pnlClass = pnl >= 0 ? "text-success" : "text-error";
       const pnlSign = pnl >= 0 ? "+" : "";
+      const agent = agents.find(a => a.id === p.agent_id);
+      const agentName = agent ? agent.name : "Unknown";
       return `
         <div class="list-item">
           <div class="list-item-info">
             <span class="list-item-title">${p.symbol}</span>
-            <span class="list-item-subtitle">Entry: ${p.entry_price} • Size: ${p.quantity}</span>
+            <span class="list-item-subtitle">${agentName} • Entry: ${p.entry_price} • Size: ${p.quantity}</span>
           </div>
           <span class="${pnlClass}">${pnlSign}$${pnl.toFixed(2)}</span>
         </div>
@@ -321,42 +453,62 @@ function renderPositions(positions: Position[]) {
     .join("");
 }
 
-async function loadDashboard() {
-  const agents = await fetchAgents();
-  const signals = await fetchSignals();
-  const positions = await fetchPositions();
-
-  // Calculate P&L
-  const totalPnl = positions.reduce((sum, p) => sum + (p.unrealized_pnl_usd || 0), 0);
-
-  document.getElementById("metric-agents")!.textContent = String(agents.length);
-  document.getElementById("metric-signals")!.textContent = String(signals.length);
-  document.getElementById("metric-positions")!.textContent = String(positions.length);
-  document.getElementById("metric-pnl")!.textContent = `$${totalPnl.toFixed(2)}`;
-
-  const pnlChange = document.getElementById("metric-pnl-change")!;
-  if (totalPnl >= 0) {
-    pnlChange.className = "metric-change";
-    pnlChange.textContent = "+Profit today";
-  } else {
-    pnlChange.className = "metric-change negative";
-    pnlChange.textContent = "-Loss today";
-  }
-
-  const recent = agents.slice(0, 6);
-  renderAgentList("recent-agents", recent);
-  renderSignals(signals);
-  renderPositions(positions);
-
-  // Add log entry
-  if (signals.length > 0) {
-    addLogEntry("success", `${signals.length} signals detected in network`);
+function updateNeuralViz() {
+  if (neuralNet) {
+    neuralNet.updateAgents(agents);
   }
 }
 
-async function loadAgents() {
-  const agents = await fetchAgents();
-  renderAgentList("all-agents", agents);
+function setStatus(online: boolean) {
+  const dot = document.getElementById("status-dot")!;
+  const text = document.getElementById("status-text")!;
+  if (online) {
+    dot.className = "dot online";
+    text.textContent = "Neural Network Online";
+  } else {
+    dot.className = "dot error";
+    text.textContent = "Network Offline";
+  }
+}
+
+function addLogEntry(level: string, message: string, agentId?: string) {
+  const entry: LogEntry = {
+    level,
+    message,
+    agent_id: agentId || null,
+    timestamp: Date.now(),
+  };
+  logs.unshift(entry);
+  if (logs.length > 100) logs.pop();
+
+  renderLogs();
+}
+
+function renderLogs() {
+  const containers = ["activity-log", "full-log"];
+  
+  containers.forEach(containerId => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const displayLogs = containerId === "activity-log" ? logs.slice(0, 20) : logs;
+
+    container.innerHTML = displayLogs
+      .map((log) => {
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const agentLabel = log.agent_id ? `[${log.agent_id.slice(0, 8)}] ` : "";
+        return `
+          <div class="log-entry">
+            <span class="log-time">${time}</span>
+            <span class="log-level ${log.level}">${log.level.toUpperCase()}</span>
+            <span class="log-message">${agentLabel}${log.message}</span>
+          </div>
+        `;
+      })
+      .join("");
+
+    container.scrollTop = 0;
+  });
 }
 
 function showSection(name: string) {
@@ -381,17 +533,8 @@ function showSection(name: string) {
   document.getElementById("page-title")!.textContent = titles[name] || name;
 }
 
-// Auto-refresh interval
-let refreshInterval: number = 0;
-
-function startAutoRefresh() {
-  refreshInterval = window.setInterval(async () => {
-    const isOnline = await healthCheck();
-    if (isOnline) {
-      await loadDashboard();
-    }
-  }, 5000);
-}
+// Neural network instance
+let neuralNet: NeuralNetwork;
 
 async function init() {
   apiBase = await getApiBase();
@@ -399,7 +542,7 @@ async function init() {
   document.getElementById("error-url")!.textContent = apiBase;
 
   // Initialize neural network visualization
-  const neuralNet = new NeuralNetwork("neural-canvas");
+  neuralNet = new NeuralNetwork("neural-canvas");
 
   let ready = false;
   for (let i = 0; i < 120; i++) {
@@ -416,8 +559,10 @@ async function init() {
     setStatus(true);
     loading.classList.add("hidden");
     content.classList.remove("hidden");
-    await loadDashboard();
-    startAutoRefresh();
+    
+    // Connect WebSocket for real-time data
+    connectWebSocket();
+    
     addLogEntry("success", "Neural network initialized successfully");
   } else {
     setStatus(false);
@@ -432,14 +577,15 @@ async function init() {
       e.preventDefault();
       const section = (el as HTMLElement).dataset.section!;
       showSection(section);
-      if (section === "agents") loadAgents();
-      if (section === "dashboard") loadDashboard();
     });
   });
 
   // Actions
   document.getElementById("refresh-btn")!.addEventListener("click", () => {
-    loadDashboard();
+    // Request fresh data via WebSocket
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "ping" }));
+    }
     addLogEntry("info", "Manual refresh triggered");
   });
 
@@ -449,7 +595,9 @@ async function init() {
 
   // Cleanup on unload
   window.addEventListener("beforeunload", () => {
-    clearInterval(refreshInterval);
+    if (ws) {
+      ws.close();
+    }
     neuralNet.destroy();
   });
 }

@@ -10,12 +10,20 @@ from contextlib import suppress
 
 import structlog
 
+from agentplane.api.routes.websocket import (
+    broadcast_agent_update,
+    broadcast_heartbeat,
+    broadcast_log,
+    broadcast_position_update,
+    broadcast_signal,
+)
 from agentplane.core.db import get_async_session
 from agentplane.core.models import AgentStatus, AgentUpdate, TradingDesk, TradingDeskStatus
-from agentplane.services.agent_service import AgentService
 from agentplane.services.agent_communication_service import AgentCommunicationService
 from agentplane.services.agent_service import AgentService
 from agentplane.services.autonomous_decision_service import AutonomousDecisionService
+from agentplane.services.market_data_service import MarketDataService
+from agentplane.services.memory_service import MemoryService
 from agentplane.services.orchestrator_service import OrchestratorService
 from agentplane.services.order_service import OrderService
 from agentplane.services.position_service import PositionService
@@ -61,6 +69,11 @@ class HeartbeatScheduler:
         self._tasks[agent_id] = task
 
         await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.IDLE))
+        
+        # Broadcast agent status update
+        await broadcast_agent_update(agent)
+        await broadcast_log("info", f"Agent {agent.name} started", agent_id=agent_id)
+        
         logger.info(
             "heartbeat.started",
             agent_id=agent_id,
@@ -165,6 +178,7 @@ class HeartbeatScheduler:
             except Exception as e:
                 logger.error("heartbeat.error", agent_id=agent_id, error=str(e))
                 await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.ERROR))
+                await broadcast_log("error", f"Heartbeat error: {str(e)}", agent_id=agent_id)
 
             with suppress(TimeoutError):
                 await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
@@ -199,6 +213,7 @@ class HeartbeatScheduler:
             if strategy is None:
                 logger.error("strategy.creation_failed", agent_id=agent_id)
                 await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.ERROR))
+                await broadcast_log("error", "Strategy creation failed", agent_id=agent_id)
                 return
         
         # Strategy exists - agent reads it (read-only, no modification allowed)
@@ -213,6 +228,8 @@ class HeartbeatScheduler:
         )
 
         await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.SCANNING))
+        await broadcast_agent_update(agent)
+        await broadcast_heartbeat(agent_id, "scanning")
 
         try:
             # 1. Check inbox for messages from other agents
@@ -226,12 +243,14 @@ class HeartbeatScheduler:
                         direction=action["direction"],
                         from_team=True,
                     )
+                    await broadcast_log("info", f"Opportunity received: {action['symbol']} {action['direction']}", agent_id=agent_id)
                 elif action["type"] == "insight":
                     logger.info(
                         "heartbeat.insight_received",
                         agent_id=agent_id,
                         insight=action["insight"][:100],
                     )
+                    await broadcast_log("info", f"Insight: {action['insight'][:100]}", agent_id=agent_id)
 
             # 2. Update mark-to-market for existing positions
             last_price = await self._signal_service.last_price(agent)
@@ -278,6 +297,8 @@ class HeartbeatScheduler:
                 direction=signal.direction,
                 setup=signal.setup_name,
             )
+            await broadcast_signal(signal)
+            await broadcast_log("success", f"Signal: {signal.symbol} {signal.direction} (confidence: {signal.confidence:.2f})", agent_id=agent_id)
 
             # 5. Broadcast opportunity to team
             await self._comm_service.broadcast_opportunity(
@@ -307,6 +328,7 @@ class HeartbeatScheduler:
                     signal_id=signal.id,
                     reason=risk_check.reason,
                 )
+                await broadcast_log("warning", f"Signal rejected: {risk_check.reason}", agent_id=agent_id)
                 return
 
             # 8. Execute order
@@ -316,6 +338,8 @@ class HeartbeatScheduler:
                 signal_id=signal.id,
                 size=risk_check.size,
             )
+            await broadcast_log("info", f"Executing order: {signal.symbol} {signal.direction} size={risk_check.size:.2f}", agent_id=agent_id)
+            
             result = await self._order_service.execute_signal(agent, signal, risk_check.size or 0)
             if result.success:
                 logger.info(
@@ -324,6 +348,9 @@ class HeartbeatScheduler:
                     order_id=result.order.id if result.order else None,
                     position_id=result.position.id if result.position else None,
                 )
+                await broadcast_log("success", f"Order filled: {signal.symbol} {signal.direction}", agent_id=agent_id)
+                if result.position:
+                    await broadcast_position_update(result.position)
                 
                 # Share execution with team
                 await self._comm_service.share_market_insight(
@@ -339,5 +366,8 @@ class HeartbeatScheduler:
                     signal_id=signal.id,
                     reason=result.reason,
                 )
+                await broadcast_log("error", f"Order failed: {result.reason}", agent_id=agent_id)
         finally:
             await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.IDLE))
+            await broadcast_agent_update(agent)
+            await broadcast_heartbeat(agent_id, "idle")
