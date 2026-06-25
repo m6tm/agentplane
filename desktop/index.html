@@ -3,95 +3,248 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agentplane</title>
+    <title>Agentplane - Neural Trading Network</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <div id="app">
+      <!-- Sidebar -->
       <aside class="sidebar">
+        <div class="bolt bolt-tl"></div>
+        <div class="bolt bolt-tr"></div>
+        <div class="bolt bolt-bl"></div>
+        <div class="bolt bolt-br"></div>
+        
         <div class="brand">
           <div class="logo"></div>
           <span>Agentplane</span>
         </div>
+        
         <nav>
-          <a href="#" class="nav-item active" data-section="dashboard">Dashboard</a>
-          <a href="#" class="nav-item" data-section="agents">Agents</a>
-          <a href="#" class="nav-item" data-section="runs">Runs</a>
-          <a href="#" class="nav-item" data-section="settings">Settings</a>
+          <a href="#" class="nav-item active" data-section="dashboard">
+            <span class="nav-icon">◈</span>
+            Dashboard
+          </a>
+          <a href="#" class="nav-item" data-section="agents">
+            <span class="nav-icon">◉</span>
+            Agents
+          </a>
+          <a href="#" class="nav-item" data-section="signals">
+            <span class="nav-icon">⚡</span>
+            Signals
+          </a>
+          <a href="#" class="nav-item" data-section="positions">
+            <span class="nav-icon">◆</span>
+            Positions
+          </a>
+          <a href="#" class="nav-item" data-section="strategies">
+            <span class="nav-icon">◎</span>
+            Strategies
+          </a>
+          <a href="#" class="nav-item" data-section="logs">
+            <span class="nav-icon">▸</span>
+            Live Logs
+          </a>
+          <a href="#" class="nav-item" data-section="settings">
+            <span class="nav-icon">⚙</span>
+            Settings
+          </a>
         </nav>
+        
         <div class="backend-status">
-          <span id="status-dot" class="dot"></span>
-          <span id="status-text">Checking…</span>
+          <div class="status-indicator">
+            <span id="status-dot" class="dot"></span>
+            <span id="status-text">Checking...</span>
+          </div>
         </div>
       </aside>
 
+      <!-- Main Content -->
       <main class="main">
         <header class="topbar">
-          <h1 id="page-title">Dashboard</h1>
+          <h1 id="page-title">Neural Dashboard</h1>
           <div class="actions">
-            <button id="refresh-btn" class="btn btn-ghost">Refresh</button>
-            <button id="open-api-btn" class="btn btn-primary">Open API docs</button>
+            <button id="refresh-btn" class="btn btn-ghost">↻ Refresh</button>
+            <button id="open-api-btn" class="btn btn-primary">API Docs</button>
           </div>
         </header>
 
-        <section id="loading" class="center">
-          <div class="spinner"></div>
-          <p>Connecting to Agentplane backend…</p>
-          <code id="backend-url"></code>
-        </section>
+        <div class="content-wrapper">
+          <!-- Loading Screen -->
+          <section id="loading" class="loading-screen">
+            <div class="neural-spinner"></div>
+            <div class="loading-text">Initializing Neural Network...</div>
+            <div class="loading-subtext" id="backend-url"></div>
+          </section>
 
-        <section id="error" class="center hidden">
-          <h2>Backend unreachable</h2>
-          <p>
-            Could not connect to the Agentplane backend on <code id="error-url"></code>.<br />
-            Make sure it is running:
-          </p>
-          <pre><code>uv run agentplane run</code></pre>
-        </section>
+          <!-- Error Screen -->
+          <section id="error" class="error-screen hidden">
+            <div class="error-icon">⚠</div>
+            <h2>Backend Connection Failed</h2>
+            <p class="muted">
+              Could not connect to Agentplane backend on <code id="error-url"></code><br />
+              Ensure the backend is running:
+            </p>
+            <pre><code>uv run agentplane run</code></pre>
+          </section>
 
-        <section id="content" class="hidden">
-          <div id="dashboard" class="section-panel">
-            <div class="cards-grid">
-              <div class="card">
-                <h3>Agents</h3>
-                <p class="metric" id="metric-agents">—</p>
+          <!-- Content -->
+          <section id="content" class="hidden">
+            <!-- Dashboard -->
+            <div id="dashboard" class="section-panel">
+              <div class="cards-grid">
+                <div class="card">
+                  <div class="card-header">
+                    <h3>Active Agents</h3>
+                    <span class="card-icon">◉</span>
+                  </div>
+                  <div class="metric" id="metric-agents">—</div>
+                  <div class="metric-change" id="metric-agents-change">Neural nodes online</div>
+                </div>
+                <div class="card">
+                  <div class="card-header">
+                    <h3>Signals Today</h3>
+                    <span class="card-icon">⚡</span>
+                  </div>
+                  <div class="metric" id="metric-signals">—</div>
+                  <div class="metric-change" id="metric-signals-change">Opportunities detected</div>
+                </div>
+                <div class="card">
+                  <div class="card-header">
+                    <h3>Open Positions</h3>
+                    <span class="card-icon">◆</span>
+                  </div>
+                  <div class="metric" id="metric-positions">—</div>
+                  <div class="metric-change" id="metric-positions-change">Active trades</div>
+                </div>
+                <div class="card">
+                  <div class="card-header">
+                    <h3>P&L Today</h3>
+                    <span class="card-icon">◈</span>
+                  </div>
+                  <div class="metric" id="metric-pnl">—</div>
+                  <div class="metric-change" id="metric-pnl-change">Realized profit/loss</div>
+                </div>
               </div>
-              <div class="card">
-                <h3>Runs</h3>
-                <p class="metric" id="metric-runs">—</p>
+
+              <div class="grid-2">
+                <div class="panel">
+                  <div class="panel-header">
+                    <h3>Neural Network Activity</h3>
+                    <span class="badge scanning">LIVE</span>
+                  </div>
+                  <div class="neural-viz" id="neural-viz">
+                    <canvas id="neural-canvas"></canvas>
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="panel-header">
+                    <h3>Active Agents</h3>
+                    <span class="badge active">ONLINE</span>
+                  </div>
+                  <ul id="recent-agents" class="list">
+                    <li class="muted">No agents active</li>
+                  </ul>
+                </div>
               </div>
-              <div class="card">
-                <h3>Adapters</h3>
-                <p class="metric" id="metric-adapters">—</p>
+
+              <div class="panel" style="margin-top: 20px;">
+                <div class="panel-header">
+                  <h3>Live Activity Log</h3>
+                  <span class="badge scanning">STREAMING</span>
+                </div>
+                <div class="activity-log" id="activity-log">
+                  <div class="log-entry">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-level info">INFO</span>
+                    <span class="log-message">Waiting for neural network activity...</span>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="panel">
-              <h3>Recent Agents</h3>
-              <ul id="recent-agents" class="list"></ul>
-            </div>
-          </div>
 
-          <div id="agents-section" class="section-panel hidden">
-            <div class="panel">
-              <h3>All Agents</h3>
-              <ul id="all-agents" class="list"></ul>
+            <!-- Agents Section -->
+            <div id="agents-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>All Neural Agents</h3>
+                  <span class="badge active">NETWORK</span>
+                </div>
+                <ul id="all-agents" class="list">
+                  <li class="muted">No agents found</li>
+                </ul>
+              </div>
             </div>
-          </div>
 
-          <div id="runs-section" class="section-panel hidden">
-            <div class="panel">
-              <h3>Recent Runs</h3>
-              <p class="muted">Runs view coming soon.</p>
+            <!-- Signals Section -->
+            <div id="signals-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>Trading Signals</h3>
+                  <span class="badge scanning">DETECTING</span>
+                </div>
+                <div id="signals-list" class="list">
+                  <div class="muted">No signals detected yet</div>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div id="settings-section" class="section-panel hidden">
-            <div class="panel">
-              <h3>Settings</h3>
-              <p class="muted">Settings coming soon.</p>
+            <!-- Positions Section -->
+            <div id="positions-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>Open Positions</h3>
+                  <span class="badge trading">ACTIVE</span>
+                </div>
+                <div id="positions-list" class="list">
+                  <div class="muted">No open positions</div>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
+
+            <!-- Strategies Section -->
+            <div id="strategies-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>Agent Strategies</h3>
+                  <span class="badge">READ-ONLY</span>
+                </div>
+                <div id="strategies-list">
+                  <p class="muted">Strategy files are located in <code>data/strategies/</code></p>
+                  <p class="muted">Edit these files to change agent behavior. Agents will adapt on next heartbeat.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Logs Section -->
+            <div id="logs-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>Live Log Stream</h3>
+                  <span class="badge scanning">REAL-TIME</span>
+                </div>
+                <div class="activity-log" id="full-log" style="max-height: 600px;">
+                  <div class="log-entry">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-level info">INFO</span>
+                    <span class="log-message">Log stream initialized...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div id="settings-section" class="section-panel hidden">
+              <div class="panel">
+                <div class="panel-header">
+                  <h3>Network Settings</h3>
+                </div>
+                <p class="muted">Settings configuration coming soon...</p>
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
 
