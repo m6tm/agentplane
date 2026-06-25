@@ -144,6 +144,11 @@ class Agent(SQLModel, table=True):
     adapter_type: str = Field(default="process")
     adapter_config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
+    # Watchlist for multi-pair scanning
+    watchlist: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    # Current scan index (rotates through watchlist)
+    scan_index: int = Field(default=0)
+
     # Runtime
     status: AgentStatus = Field(default=AgentStatus.IDLE)
     session_id: str | None = None
@@ -575,6 +580,7 @@ class AgentCreate(SQLModel):
     strategy_id: str | None = None
     adapter_type: str = "process"
     adapter_config: dict[str, Any] = Field(default_factory=dict)
+    watchlist: list[dict[str, Any]] = Field(default_factory=list)
     risk_profile: RiskProfile = RiskProfile.MODERATE
     skills: list[str] = Field(default_factory=list)
     heartbeat_interval_seconds: int = 60
@@ -588,6 +594,8 @@ class AgentUpdate(SQLModel):
     trading_desk_id: str | None = None
     strategy_id: str | None = None
     adapter_config: dict[str, Any] | None = None
+    watchlist: list[dict[str, Any]] | None = None
+    scan_index: int | None = None
     status: AgentStatus | None = None
     risk_profile: RiskProfile | None = None
     skills: list[str] | None = None

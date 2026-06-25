@@ -23,6 +23,7 @@ class AgentService:
                 strategy_id=data.strategy_id,
                 adapter_type=data.adapter_type,
                 adapter_config=data.adapter_config,
+                watchlist=data.watchlist,
                 risk_profile=data.risk_profile,
                 skills=data.skills,
                 heartbeat_interval_seconds=data.heartbeat_interval_seconds,

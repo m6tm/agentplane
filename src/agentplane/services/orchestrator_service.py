@@ -40,6 +40,12 @@ DEFAULT_TEAM = [
         "interval": "1h",
         "period": "5d",
         "heartbeat_interval_seconds": 30,
+        "watchlist": [
+            {"symbol": "EUR_USD", "interval": "1h", "period": "5d"},
+            {"symbol": "GBP_USD", "interval": "1h", "period": "5d"},
+            {"symbol": "USD_JPY", "interval": "1h", "period": "5d"},
+            {"symbol": "EUR_GBP", "interval": "1h", "period": "5d"},
+        ],
     },
     {
         "name": "GBPJPY Swing",
@@ -51,6 +57,12 @@ DEFAULT_TEAM = [
         "interval": "4h",
         "period": "30d",
         "heartbeat_interval_seconds": 300,
+        "watchlist": [
+            {"symbol": "GBP_JPY", "interval": "4h", "period": "30d"},
+            {"symbol": "EUR_JPY", "interval": "4h", "period": "30d"},
+            {"symbol": "AUD_JPY", "interval": "4h", "period": "30d"},
+            {"symbol": "USD_JPY", "interval": "4h", "period": "30d"},
+        ],
     },
     {
         "name": "Risk Manager",
@@ -62,6 +74,12 @@ DEFAULT_TEAM = [
         "interval": "1d",
         "period": "5d",
         "heartbeat_interval_seconds": 600,
+        "watchlist": [
+            {"symbol": "EUR_USD", "interval": "1d", "period": "5d"},
+            {"symbol": "GBP_USD", "interval": "1d", "period": "5d"},
+            {"symbol": "USD_JPY", "interval": "1d", "period": "5d"},
+            {"symbol": "AUD_USD", "interval": "1d", "period": "5d"},
+        ],
     },
 ]
 
@@ -185,6 +203,7 @@ class OrchestratorService:
                     },
                     risk_profile=spec["risk_profile"],
                     heartbeat_interval_seconds=spec["heartbeat_interval_seconds"],
+                    watchlist=spec.get("watchlist", []),
                 )
             )
             created.append(agent.id)

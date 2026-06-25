@@ -13,10 +13,13 @@ import structlog
 from agentplane.core.db import get_async_session
 from agentplane.core.models import AgentStatus, AgentUpdate, TradingDesk, TradingDeskStatus
 from agentplane.services.agent_service import AgentService
+from agentplane.services.agent_communication_service import AgentCommunicationService
+from agentplane.services.agent_service import AgentService
 from agentplane.services.orchestrator_service import OrchestratorService
 from agentplane.services.order_service import OrderService
 from agentplane.services.position_service import PositionService
 from agentplane.services.risk_service import RiskService
+from agentplane.services.scanner_service import ScannerService
 from agentplane.services.signal_service import SignalService
 
 logger = structlog.get_logger()
@@ -33,6 +36,8 @@ class HeartbeatScheduler:
         self._risk_service = RiskService()
         self._order_service = OrderService()
         self._position_service = PositionService()
+        self._scanner_service = ScannerService()
+        self._comm_service = AgentCommunicationService()
 
     async def start_agent(self, agent_id: str) -> bool:
         """Start heartbeat loop for an agent."""
@@ -176,16 +181,36 @@ class HeartbeatScheduler:
         await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.SCANNING))
 
         try:
-            # Update mark-to-market for existing positions
+            # 1. Check inbox for messages from other agents
+            inbox_actions = await self._comm_service.process_inbox(agent_id)
+            for action in inbox_actions:
+                if action["type"] == "opportunity":
+                    logger.info(
+                        "heartbeat.opportunity_received",
+                        agent_id=agent_id,
+                        symbol=action["symbol"],
+                        direction=action["direction"],
+                        from_team=True,
+                    )
+                elif action["type"] == "insight":
+                    logger.info(
+                        "heartbeat.insight_received",
+                        agent_id=agent_id,
+                        insight=action["insight"][:100],
+                    )
+
+            # 2. Update mark-to-market for existing positions
             last_price = await self._signal_service.last_price(agent)
             if last_price is not None:
                 await self._position_service.update_prices(
                     agent, agent.adapter_config.get("symbol", ""), last_price
                 )
 
-            # Generate signal
-            signal = await self._signal_service.generate(agent)
+            # 3. Scan next symbol/timeframe in watchlist
+            signal = await self._scanner_service.scan_next(agent)
+            
             if signal is None:
+                # No signal found this heartbeat, that's ok
                 return
 
             logger.info(
@@ -194,9 +219,29 @@ class HeartbeatScheduler:
                 signal_id=signal.id,
                 symbol=signal.symbol,
                 direction=signal.direction,
+                setup=signal.setup_name,
             )
 
-            # Validate risk
+            # 4. Broadcast opportunity to team
+            await self._comm_service.broadcast_opportunity(
+                sender_agent_id=agent_id,
+                symbol=signal.symbol,
+                direction=signal.direction,
+                confidence=signal.confidence,
+                timeframe=signal.market_data_snapshot.get("interval", "1h"),
+                setup_name=signal.setup_name,
+                details=signal.market_data_snapshot,
+            )
+
+            # 5. Request risk check from risk manager
+            risk_messages = await self._comm_service.request_risk_check(
+                sender_agent_id=agent_id,
+                symbol=signal.symbol,
+                direction=signal.direction,
+                size=1.0,  # Will be refined by risk service
+            )
+            
+            # 6. Validate risk locally too
             risk_check = await self._risk_service.validate_signal(agent, signal)
             if not risk_check.allowed:
                 logger.warning(
@@ -207,7 +252,7 @@ class HeartbeatScheduler:
                 )
                 return
 
-            # Execute order
+            # 7. Execute order
             logger.info(
                 "signal.executing",
                 agent_id=agent_id,
@@ -221,6 +266,14 @@ class HeartbeatScheduler:
                     agent_id=agent_id,
                     order_id=result.order.id if result.order else None,
                     position_id=result.position.id if result.position else None,
+                )
+                
+                # Share execution with team
+                await self._comm_service.share_market_insight(
+                    sender_agent_id=agent_id,
+                    insight=f"Executed {signal.direction} on {signal.symbol} at {signal.market_data_snapshot.get('latest_close')}",
+                    category="execution",
+                    symbols=[signal.symbol],
                 )
             else:
                 logger.warning(
