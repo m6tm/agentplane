@@ -182,15 +182,26 @@ class HeartbeatScheduler:
             await self._run_orchestrator_once(agent_id)
             return
 
-        # Ensure strategy file exists
-        strategy_file = self._strategy_file_service.create_default(agent)
-        
-        # Read current strategy
+        # Read strategy file - if none exists, agent creates its own once
         strategy = self._strategy_file_service.read(agent_id)
         if strategy is None:
-            logger.warning("heartbeat.no_strategy", agent_id=agent_id)
-            return
-
+            # First heartbeat: agent creates its own strategy based on role
+            logger.info(
+                "strategy.creating_first_time",
+                agent_id=agent_id,
+                role=agent.role,
+                message="Agent creating its initial strategy based on trading style"
+            )
+            self._strategy_file_service.create_default(agent)
+            
+            # Re-read after creation
+            strategy = self._strategy_file_service.read(agent_id)
+            if strategy is None:
+                logger.error("strategy.creation_failed", agent_id=agent_id)
+                await self._agent_service.update(agent_id, AgentUpdate(status=AgentStatus.ERROR))
+                return
+        
+        # Strategy exists - agent reads it (read-only, no modification allowed)
         strategy_summary = self._strategy_file_service.get_strategy_summary(agent_id)
         logger.info(
             "heartbeat.strategy_loaded",
